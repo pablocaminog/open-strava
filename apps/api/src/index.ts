@@ -17,6 +17,7 @@ import { corsMiddleware } from './middleware/cors.js';
 import { requestIdMiddleware } from './middleware/requestId.js';
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
+import { activityRoutes } from './routes/activities.js';
 import type { Env } from './env.js';
 
 export function buildApp(): Hono<{ Bindings: Env }> {
@@ -35,6 +36,7 @@ export function buildApp(): Hono<{ Bindings: Env }> {
 
   app.route('/', healthRoutes);
   app.route('/api/v1', authRoutes);
+  app.route('/api/v1', activityRoutes);
 
   app.notFound((c) => c.json({ error: 'not_found', status: 404 }, 404));
   return app;

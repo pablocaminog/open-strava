@@ -128,22 +128,55 @@ export class FakeD1 implements D1Database {
   }
 }
 
+export interface FakeR2Object {
+  body: ArrayBuffer;
+  customMetadata: Record<string, string>;
+  httpMetadata: { contentType?: string };
+}
+
+export class FakeR2 {
+  store = new Map<string, FakeR2Object>();
+  put = async (
+    key: string,
+    body: ArrayBuffer | ArrayBufferView,
+    opts?: { httpMetadata?: { contentType?: string }; customMetadata?: Record<string, string> },
+  ): Promise<unknown> => {
+    const ab =
+      body instanceof ArrayBuffer
+        ? body
+        : (body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer);
+    this.store.set(key, {
+      body: ab,
+      customMetadata: opts?.customMetadata ?? {},
+      httpMetadata: opts?.httpMetadata ?? {},
+    });
+    return { key };
+  };
+}
+
+export class FakeQueue<T> {
+  sent: T[] = [];
+  send = async (msg: T): Promise<void> => {
+    this.sent.push(msg);
+  };
+  sendBatch = async (msgs: { body: T }[]): Promise<void> => {
+    for (const m of msgs) this.sent.push(m.body);
+  };
+}
+
 export function fakeEnv(overrides: Partial<Env> = {}): Env {
   return {
     ENV: 'dev',
     APP_ORIGIN: 'http://localhost:4321',
     SESSION_SIGNING_KEY: 'test-key-do-not-use-in-prod-32b!!',
     DB: new FakeD1(),
-    RAW_BUCKET: {} as R2Bucket,
-    PARSED_BUCKET: {} as R2Bucket,
-    EXPORTS_BUCKET: {} as R2Bucket,
+    RAW_BUCKET: new FakeR2() as unknown as R2Bucket,
+    PARSED_BUCKET: new FakeR2() as unknown as R2Bucket,
+    EXPORTS_BUCKET: new FakeR2() as unknown as R2Bucket,
     KV_SESSIONS: new FakeKV() as unknown as KVNamespace,
     KV_LEADERBOARDS: new FakeKV() as unknown as KVNamespace,
     KV_FEED: new FakeKV() as unknown as KVNamespace,
-    INGEST_QUEUE: {
-      send: () => Promise.resolve(),
-      sendBatch: () => Promise.resolve(),
-    } as unknown as Queue,
+    INGEST_QUEUE: new FakeQueue() as unknown as Queue,
     ...overrides,
   };
 }
