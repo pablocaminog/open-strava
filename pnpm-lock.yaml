@@ -43,7 +43,11 @@ importers:
         specifier: 2.1.5
         version: 2.1.5
 
-  packages/metrics: {}
+  packages/metrics:
+    devDependencies:
+      vitest:
+        specifier: 2.1.5
+        version: 2.1.5
 
   packages/segments: {}
 
