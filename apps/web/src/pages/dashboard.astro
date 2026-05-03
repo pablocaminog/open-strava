@@ -1,0 +1,139 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="Dashboard · open-strava">
+  <section class="space-y-6">
+    <header>
+      <h1 class="text-2xl font-bold">Performance Management</h1>
+      <p id="dashboard-subtitle" class="text-sm text-neutral-600 dark:text-neutral-400">
+        Loading…
+      </p>
+    </header>
+
+    <dl id="latest-stats" class="grid grid-cols-2 gap-4 sm:grid-cols-4"></dl>
+
+    <section class="space-y-2">
+      <h2 class="text-lg font-semibold">CTL · ATL · TSB</h2>
+      <div id="pmc-chart" class="w-full"></div>
+    </section>
+
+    <section class="space-y-2">
+      <h2 class="text-lg font-semibold">Daily TSS</h2>
+      <div id="tss-chart" class="w-full"></div>
+    </section>
+  </section>
+</Base>
+
+<script>
+  import uPlot from 'uplot';
+  import 'uplot/dist/uPlot.min.css';
+
+  type Day = { date: string; tss: number; ctl: number; atl: number; tsb: number };
+
+  const subtitle = document.getElementById('dashboard-subtitle')!;
+  const stats = document.getElementById('latest-stats')!;
+
+  init().catch((err) => {
+    subtitle.textContent = `Failed to load: ${(err as Error).message}`;
+  });
+
+  async function init() {
+    const me = await fetch('/api/v1/auth/me', { credentials: 'include' });
+    if (!me.ok) {
+      subtitle.innerHTML = `Please <a class="text-accent hover:underline" href="/login">log in</a>.`;
+      return;
+    }
+    const { user } = (await me.json()) as { user: { id: string; handle: string } };
+
+    const to = todayIso();
+    const from = isoDaysAgo(120);
+    const pmcRes = await fetch(`/api/v1/athletes/${user.id}/pmc?from=${from}&to=${to}`, {
+      credentials: 'include',
+    });
+    if (!pmcRes.ok) throw new Error(`pmc HTTP ${pmcRes.status}`);
+    const { days } = (await pmcRes.json()) as { days: Day[] };
+
+    if (days.length === 0) {
+      subtitle.innerHTML = `No activities yet. <a class="text-accent hover:underline" href="/upload">Upload one</a>.`;
+      return;
+    }
+
+    subtitle.textContent = `${user.handle} · last ${days.length} days`;
+    renderStats(days);
+    renderPmcChart(days);
+    renderTssChart(days);
+  }
+
+  function renderStats(days: Day[]) {
+    const last = days[days.length - 1]!;
+    const cells: { label: string; value: string }[] = [
+      { label: 'CTL (fitness)', value: last.ctl.toFixed(1) },
+      { label: 'ATL (fatigue)', value: last.atl.toFixed(1) },
+      { label: 'TSB (form)', value: last.tsb.toFixed(1) },
+      { label: '7-day TSS', value: days.slice(-7).reduce((a, b) => a + b.tss, 0).toFixed(0) },
+    ];
+    stats.innerHTML = cells
+      .map(
+        (c) =>
+          `<div class="rounded border border-neutral-200 p-3 dark:border-neutral-800">
+            <dt class="text-xs uppercase text-neutral-500">${c.label}</dt>
+            <dd class="text-lg font-semibold">${c.value}</dd>
+          </div>`,
+      )
+      .join('');
+  }
+
+  function renderPmcChart(days: Day[]) {
+    const t = days.map((d) => Math.floor(Date.parse(d.date) / 1000));
+    const ctl = days.map((d) => d.ctl);
+    const atl = days.map((d) => d.atl);
+    const tsb = days.map((d) => d.tsb);
+    const opts: uPlot.Options = {
+      width: 900,
+      height: 300,
+      cursor: { drag: { x: true, y: false } },
+      scales: { x: { time: true } },
+      series: [
+        {},
+        { label: 'CTL', stroke: '#3b82f6', width: 2 },
+        { label: 'ATL', stroke: '#ef4444', width: 1.5 },
+        { label: 'TSB', stroke: '#10b981', width: 1.5, dash: [4, 2] },
+      ],
+    };
+    new uPlot(opts, [t, ctl, atl, tsb], document.getElementById('pmc-chart')!);
+  }
+
+  function renderTssChart(days: Day[]) {
+    const t = days.map((d) => Math.floor(Date.parse(d.date) / 1000));
+    const tss = days.map((d) => d.tss);
+    const opts: uPlot.Options = {
+      width: 900,
+      height: 200,
+      scales: { x: { time: true } },
+      series: [
+        {},
+        {
+          label: 'TSS',
+          stroke: '#fc4c02',
+          paths: uPlot.paths.bars!({ size: [0.6, 100] }),
+        },
+      ],
+    };
+    new uPlot(opts, [t, tss], document.getElementById('tss-chart')!);
+  }
+
+  function todayIso(): string {
+    const d = new Date();
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  }
+
+  function isoDaysAgo(n: number): string {
+    const d = new Date(Date.now() - n * 86_400_000);
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  }
+
+  function pad(n: number): string {
+    return String(n).padStart(2, '0');
+  }
+</script>
