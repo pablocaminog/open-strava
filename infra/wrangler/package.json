@@ -6,7 +6,11 @@
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {
-    "build": "echo \"wrangler infra — wired in T14\" && exit 0",
-    "typecheck": "echo \"wrangler typecheck — wired in T14\" && exit 0"
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "22.9.1",
+    "vitest": "2.1.5"
   }
 }
