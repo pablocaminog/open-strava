@@ -2,7 +2,7 @@
   "name": "@open-strava/segments",
   "version": "0.0.0",
   "private": true,
-  "description": "Segment matching — R-tree bbox prefilter + DTW polyline match.",
+  "description": "Segment matching — bbox prefilter + DTW polyline match.",
   "license": "AGPL-3.0-only",
   "type": "module",
   "main": "./src/index.ts",
@@ -11,7 +11,10 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "echo \"segments tests — wired in T13\" && exit 0",
-    "typecheck": "echo \"segments typecheck — wired in T13\" && exit 0"
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "vitest": "2.1.5"
   }
 }
