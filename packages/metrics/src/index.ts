@@ -18,3 +18,4 @@ export {
   type PaceSample,
   type PaceMetrics,
 } from './pace.js';
+export { peakCurve, DEFAULT_PEAK_WINDOWS, type PeakPoint } from './peakCurve.js';
