@@ -4,7 +4,9 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "composite": true,
-    "types": []
+    "lib": ["ES2022"],
+    "types": ["@cloudflare/workers-types"]
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": ["test", "node_modules", "dist"]
 }

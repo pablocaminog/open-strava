@@ -4,8 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "echo \"api dev — wired in T16\" && exit 0",
-    "build": "echo \"api build — wired in T16\" && exit 0",
-    "typecheck": "echo \"api typecheck — wired in T16\" && exit 0"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build": "wrangler deploy --dry-run --outdir=dist",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "hono": "4.6.10"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20241127.0",
+    "vitest": "2.1.5",
+    "wrangler": "3.91.0"
   }
 }
