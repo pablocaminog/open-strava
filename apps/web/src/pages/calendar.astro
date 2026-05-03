@@ -1,0 +1,133 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="Calendar · open-strava">
+  <section class="space-y-6">
+    <header>
+      <h1 class="text-2xl font-bold">Training calendar</h1>
+      <p id="calendar-subtitle" class="text-sm text-neutral-600 dark:text-neutral-400">
+        Loading…
+      </p>
+    </header>
+
+    <div id="calendar-grid" class="overflow-x-auto"></div>
+    <div id="day-detail" class="text-sm"></div>
+  </section>
+</Base>
+
+<script>
+  type Day = { date: string; tss: number };
+
+  const subtitle = document.getElementById('calendar-subtitle')!;
+  const grid = document.getElementById('calendar-grid')!;
+  const detail = document.getElementById('day-detail')!;
+
+  init().catch((err) => {
+    subtitle.textContent = `Failed: ${(err as Error).message}`;
+  });
+
+  async function init() {
+    const me = await fetch('/api/v1/auth/me', { credentials: 'include' });
+    if (!me.ok) {
+      subtitle.innerHTML = `Please <a class="text-accent hover:underline" href="/login">log in</a>.`;
+      return;
+    }
+    const { user } = (await me.json()) as { user: { id: string; handle: string } };
+
+    const to = isoToday();
+    const from = isoDaysAgo(364);
+    const pmc = await fetch(`/api/v1/athletes/${user.id}/pmc?from=${from}&to=${to}`, {
+      credentials: 'include',
+    });
+    if (!pmc.ok) throw new Error(`pmc HTTP ${pmc.status}`);
+    const { days } = (await pmc.json()) as { days: Day[] };
+
+    const total = days.reduce((a, b) => a + b.tss, 0);
+    const trainingDays = days.filter((d) => d.tss > 0).length;
+    subtitle.textContent = `${user.handle} · last 365 days · ${trainingDays} training days · ${Math.round(
+      total,
+    )} total TSS`;
+
+    grid.innerHTML = '';
+    grid.appendChild(buildHeatmap(days));
+  }
+
+  function buildHeatmap(days: Day[]): SVGSVGElement {
+    const cell = 12;
+    const gap = 2;
+    const totalDays = days.length;
+    const cols = Math.ceil(totalDays / 7) + 1;
+    const width = cols * (cell + gap) + 30;
+    const height = 7 * (cell + gap) + 20;
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', String(width));
+    svg.setAttribute('height', String(height));
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.setAttribute('class', 'block');
+
+    const max = Math.max(50, ...days.map((d) => d.tss));
+    const firstDate = new Date(days[0]!.date + 'T00:00:00Z');
+    // Align so the first column starts on Sunday.
+    const firstDow = firstDate.getUTCDay();
+
+    for (let i = 0; i < days.length; i++) {
+      const d = days[i]!;
+      const offset = i + firstDow;
+      const col = Math.floor(offset / 7);
+      const row = offset % 7;
+      const x = 30 + col * (cell + gap);
+      const y = row * (cell + gap);
+
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      rect.setAttribute('x', String(x));
+      rect.setAttribute('y', String(y));
+      rect.setAttribute('width', String(cell));
+      rect.setAttribute('height', String(cell));
+      rect.setAttribute('rx', '2');
+      rect.setAttribute('fill', colorFor(d.tss, max));
+      rect.setAttribute('data-date', d.date);
+      rect.setAttribute('data-tss', String(d.tss));
+      rect.setAttribute('class', 'cursor-pointer');
+      rect.addEventListener('mouseenter', () => {
+        detail.textContent = `${d.date} · TSS ${d.tss.toFixed(1)}`;
+      });
+      svg.appendChild(rect);
+    }
+
+    // Day-of-week labels.
+    ['Sun', '', 'Tue', '', 'Thu', '', 'Sat'].forEach((label, i) => {
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('x', '0');
+      text.setAttribute('y', String(i * (cell + gap) + cell - 2));
+      text.setAttribute('font-size', '10');
+      text.setAttribute('fill', 'currentColor');
+      text.textContent = label;
+      svg.appendChild(text);
+    });
+
+    return svg;
+  }
+
+  function colorFor(tss: number, max: number): string {
+    if (tss <= 0) return '#e5e7eb';
+    const ratio = Math.min(1, tss / max);
+    if (ratio < 0.25) return '#fde7d3';
+    if (ratio < 0.5) return '#fbb277';
+    if (ratio < 0.75) return '#fc7c2a';
+    return '#fc4c02';
+  }
+
+  function isoToday(): string {
+    const d = new Date();
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  }
+  function isoDaysAgo(n: number): string {
+    const d = new Date(Date.now() - n * 86_400_000);
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  }
+  function pad(n: number): string {
+    return String(n).padStart(2, '0');
+  }
+</script>
