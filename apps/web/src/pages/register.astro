@@ -1,0 +1,95 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="Register · open-strava">
+  <section class="mx-auto max-w-md space-y-6">
+    <h1 class="text-2xl font-bold">Create your account</h1>
+    <p class="text-sm text-neutral-600 dark:text-neutral-400">
+      We use passkeys — no passwords. After clicking Create, your browser will
+      prompt to save a passkey on this device.
+    </p>
+
+    <form id="register-form" class="space-y-4">
+      <label class="block">
+        <span class="text-sm font-medium">Handle</span>
+        <input
+          required
+          name="handle"
+          minlength="2"
+          maxlength="32"
+          pattern="[a-zA-Z0-9_-]+"
+          class="mt-1 w-full rounded border border-neutral-300 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-900"
+        />
+      </label>
+      <label class="block">
+        <span class="text-sm font-medium">Email</span>
+        <input
+          required
+          name="email"
+          type="email"
+          class="mt-1 w-full rounded border border-neutral-300 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-900"
+        />
+      </label>
+      <button
+        type="submit"
+        class="rounded bg-accent px-4 py-2 font-medium text-white hover:opacity-90 disabled:opacity-50"
+        >Create account</button
+      >
+      <p id="register-status" class="text-sm" aria-live="polite"></p>
+    </form>
+
+    <p class="text-sm text-neutral-600 dark:text-neutral-400">
+      Already have an account? <a href="/login" class="text-accent hover:underline">Login</a>
+    </p>
+  </section>
+</Base>
+
+<script>
+  import { startRegistration } from '@simplewebauthn/browser';
+
+  const form = document.getElementById('register-form') as HTMLFormElement;
+  const status = document.getElementById('register-status')!;
+  const submit = form.querySelector('button[type=submit]') as HTMLButtonElement;
+
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    status.textContent = '';
+    submit.disabled = true;
+    try {
+      const data = new FormData(form);
+      const handle = String(data.get('handle') ?? '').trim();
+      const email = String(data.get('email') ?? '').trim();
+
+      const optionsRes = await fetch('/api/v1/auth/register/options', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handle, email }),
+      });
+      if (!optionsRes.ok) throw new Error((await optionsRes.json().catch(() => ({ error: optionsRes.statusText }))).error);
+      const { challengeId, userId, options } = await optionsRes.json();
+
+      const attestation = await startRegistration({ optionsJSON: options });
+
+      const verifyRes = await fetch('/api/v1/auth/register/verify', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          challengeId,
+          userId,
+          response: attestation,
+          deviceName: navigator.userAgent.slice(0, 60),
+        }),
+      });
+      if (!verifyRes.ok) throw new Error((await verifyRes.json().catch(() => ({ error: verifyRes.statusText }))).error);
+
+      status.textContent = 'Account created — redirecting…';
+      window.location.href = '/dashboard';
+    } catch (err) {
+      status.textContent = `Error: ${(err as Error).message}`;
+      submit.disabled = false;
+    }
+  });
+</script>
