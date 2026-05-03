@@ -4,8 +4,20 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "echo \"web dev — wired in T22\" && exit 0",
-    "build": "echo \"web build — wired in T22\" && exit 0",
-    "typecheck": "echo \"web typecheck — wired in T22\" && exit 0"
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "typecheck": "astro check",
+    "test": "echo \"web tests — wired with feature tasks\" && exit 0"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "12.6.10",
+    "@astrojs/tailwind": "5.1.4",
+    "astro": "5.7.10",
+    "tailwindcss": "3.4.16"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.4",
+    "@types/node": "22.9.1"
   }
 }

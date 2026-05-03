@@ -8,7 +8,6 @@
     { "path": "./packages/fit-parser" },
     { "path": "./packages/metrics" },
     { "path": "./packages/segments" },
-    { "path": "./apps/api" },
-    { "path": "./apps/web" }
+    { "path": "./apps/api" }
   ]
 }

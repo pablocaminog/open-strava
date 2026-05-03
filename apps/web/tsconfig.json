@@ -1,10 +1,5 @@
 {
-  "extends": "../../tsconfig.base.json",
-  "compilerOptions": {
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "composite": true,
-    "types": []
-  },
-  "include": ["src/**/*"]
+  "extends": "astro/tsconfigs/strict",
+  "include": ["src/**/*", ".astro/types.d.ts"],
+  "exclude": ["dist"]
 }

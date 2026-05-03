@@ -1,0 +1,39 @@
+---
+import Base from '../layouts/Base.astro';
+import Feature from '../components/Feature.astro';
+---
+
+<Base title="open-strava">
+  <section class="space-y-6">
+    <h1 class="text-4xl font-bold tracking-tight">Train. Own your data.</h1>
+    <p class="max-w-2xl text-lg text-neutral-700 dark:text-neutral-300">
+      open-strava is a free, open-source training platform — Strava-style social
+      feed and TrainingPeaks-style PMC charts, running entirely on Cloudflare.
+      Upload FIT/TCX/GPX, see your TSS / NP / IF / PMC, and export everything,
+      anytime.
+    </p>
+    <div class="flex gap-3">
+      <a
+        class="inline-flex items-center rounded bg-accent px-4 py-2 font-medium text-white hover:opacity-90"
+        href="/register">Create account</a
+      >
+      <a
+        class="inline-flex items-center rounded border border-neutral-300 px-4 py-2 font-medium hover:border-accent dark:border-neutral-700"
+        href="/login">Login</a
+      >
+    </div>
+  </section>
+
+  <section class="mt-12 grid gap-4 md:grid-cols-3">
+    <Feature title="Data sovereignty">
+      Free export, open formats, public API. Your data, anywhere you want it.
+    </Feature>
+    <Feature title="No silent paywalls">
+      Free tier covers all core analytics. Paid tier is convenience, not gating.
+    </Feature>
+    <Feature title="Open source">
+      AGPL-3.0. Self-host on your own Cloudflare account in under ten minutes.
+    </Feature>
+  </section>
+</Base>
+
