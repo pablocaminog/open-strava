@@ -261,6 +261,16 @@ export class FakeD1 implements D1Database {
         },
       ];
     }
+    if (trimmed.startsWith('SELECT date, tss FROM pmc_daily')) {
+      const athleteId = params[0];
+      const out: Row[] = [];
+      for (const v of this.pmcDaily.values()) {
+        if (v.athlete_id !== athleteId) continue;
+        out.push({ date: v.date, tss: v.tss });
+      }
+      out.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      return out;
+    }
     if (trimmed.startsWith('INSERT INTO pmc_daily')) {
       const [athlete_id, date, tss] = params as [string, string, number];
       const key = `${athlete_id}:${date}`;
