@@ -34,6 +34,10 @@ importers:
   infra/wrangler: {}
 
   packages/fit-parser:
+    dependencies:
+      fast-xml-parser:
+        specifier: 4.5.0
+        version: 4.5.0
     devDependencies:
       vitest:
         specifier: 2.1.5
@@ -661,6 +665,10 @@ packages:
   fast-levenshtein@2.0.6:
     resolution: {integrity: sha512-DCXu6Ifhqcks7TZKY3Hxp3y6qphY5SJZmrWMDrKcERSOXWQdMhU9Ig/PYrzyw/ul9jOIyh0N4M0tbC5hodg8dw==}
 
+  fast-xml-parser@4.5.0:
+    resolution: {integrity: sha512-/PlTQCI96+fZMAOLMZK4CWG1ItCbfZ/0jx7UIJFChPNrx7tcEgerUgWbeieCM9MfHInUDyK8DWYZ+YrywDJuTg==}
+    hasBin: true
+
   fastq@1.20.1:
     resolution: {integrity: sha512-GGToxJ/w1x32s/D2EKND7kTil4n8OVk/9mycTc4VDza13lOvpUZTGX3mFSCtV9ksdGBVzvsyAVLM6mHFThxXxw==}
 
@@ -896,6 +904,9 @@ packages:
   strip-json-comments@3.1.1:
     resolution: {integrity: sha512-6fPc+R4ihwqP6N/aIv2f1gMH8lOVtWQHoqC4yK6oSDVVocumAsfCqjkXnqiYMhmMwS/mEHLp7Vehlt3ql6lEig==}
     engines: {node: '>=8'}
+
+  strnum@1.1.2:
+    resolution: {integrity: sha512-vrN+B7DBIoTTZjnPNewwhx6cBA/H+IS7rfW68n7XxC1y7uoiGQBxaKzqucGUgavX15dJgiGztLJ8vxuEzwqBdA==}
 
   supports-color@7.2.0:
     resolution: {integrity: sha512-qpCAvRl9stuOHveKsn7HncJRvv501qIacKzQlO/+Lwxc9+0q2wLyv4Dfvt80/DPn2pqOBsJdDiogXGR9+OvwRw==}
@@ -1579,6 +1590,10 @@ snapshots:
 
   fast-levenshtein@2.0.6: {}
 
+  fast-xml-parser@4.5.0:
+    dependencies:
+      strnum: 1.1.2
+
   fastq@1.20.1:
     dependencies:
       reusify: 1.1.0
@@ -1794,6 +1809,8 @@ snapshots:
   std-env@3.10.0: {}
 
   strip-json-comments@3.1.1: {}
+
+  strnum@1.1.2: {}
 
   supports-color@7.2.0:
     dependencies:
