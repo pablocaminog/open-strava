@@ -20,8 +20,9 @@ describe('session', () => {
     const env = fakeEnv();
     const { cookie } = await createSession(env, 'user-2');
     const setVal = cookie.split(';')[0]!;
-    // Flip a character in the signature half
-    const tampered = setVal.slice(0, -1) + (setVal.slice(-1) === 'A' ? 'B' : 'A');
+    // Replace the signature half with garbage of the same shape.
+    const dot = setVal.indexOf('.');
+    const tampered = `${setVal.slice(0, dot + 1)}AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA`;
     const loaded = await loadSession(env, tampered);
     expect(loaded).toBeNull();
   });
