@@ -10,3 +10,11 @@ export {
   type DecouplingResult,
   type Sex,
 } from './hr.js';
+export {
+  minettiCost,
+  gradeAdjustedSpeed,
+  normalizedGradedPace,
+  paceMetrics,
+  type PaceSample,
+  type PaceMetrics,
+} from './pace.js';
