@@ -1,1 +1,12 @@
 export { normalizedPower, powerMetrics, type PowerMetrics, type PowerSample } from './power.js';
+export {
+  timeInZones,
+  trimp,
+  decoupling,
+  type HrSample,
+  type HrZoneConfig,
+  type HrZoneTimes,
+  type DecouplingSample,
+  type DecouplingResult,
+  type Sex,
+} from './hr.js';
