@@ -22,6 +22,33 @@ const { id } = Astro.params;
       <h2 class="text-lg font-semibold">Peak power curve</h2>
       <div id="peak-chart" class="w-full"></div>
     </section>
+
+    <section id="comments" class="space-y-3 pt-4">
+      <div class="flex items-center gap-3">
+        <button
+          id="kudos-btn"
+          class="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-accent dark:border-neutral-700"
+          >👍 Kudos · <span id="kudos-count">0</span></button
+        >
+      </div>
+      <h2 class="text-lg font-semibold">Comments</h2>
+      <ul id="comment-list" class="space-y-2 text-sm"></ul>
+      <form id="comment-form" class="space-y-2">
+        <textarea
+          name="body"
+          required
+          maxlength="2000"
+          rows="3"
+          placeholder="Say something…"
+          class="w-full rounded border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+        ></textarea>
+        <button
+          type="submit"
+          class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
+          >Post</button
+        >
+      </form>
+    </section>
   </section>
 </Base>
 
@@ -88,6 +115,80 @@ const { id } = Astro.params;
     renderSummary(meta.activity, meta.metrics);
     renderTimeChart(stream.samples);
     renderPeakChart(meta.metrics);
+    wireKudos(id);
+    loadComments(id);
+    wireCommentForm(id);
+  }
+
+  async function wireKudos(activityId: string) {
+    const btn = document.getElementById('kudos-btn') as HTMLButtonElement;
+    const countEl = document.getElementById('kudos-count')!;
+    const refresh = async () => {
+      const r = await fetch(`/api/v1/activities/${activityId}/kudos`, { credentials: 'include' });
+      if (r.ok) {
+        const body = (await r.json()) as { items: unknown[] };
+        countEl.textContent = String(body.items.length);
+      }
+    };
+    await refresh();
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        await fetch(`/api/v1/activities/${activityId}/kudos`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+        await refresh();
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
+  async function loadComments(activityId: string) {
+    const list = document.getElementById('comment-list')!;
+    const r = await fetch(`/api/v1/activities/${activityId}/comments`, { credentials: 'include' });
+    if (!r.ok) return;
+    const body = (await r.json()) as {
+      items: { id: string; handle: string; body: string; createdAt: number }[];
+    };
+    list.innerHTML = '';
+    for (const c of body.items) {
+      const li = document.createElement('li');
+      li.className = 'rounded border border-neutral-200 p-2 dark:border-neutral-800';
+      li.innerHTML = `<strong>${escape(c.handle)}</strong> <span class="text-xs text-neutral-500">${escape(
+        new Date(c.createdAt * 1000).toLocaleString(),
+      )}</span><p class="mt-1 whitespace-pre-wrap">${escape(c.body)}</p>`;
+      list.appendChild(li);
+    }
+  }
+
+  function wireCommentForm(activityId: string) {
+    const form = document.getElementById('comment-form') as HTMLFormElement;
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(form);
+      const body = String(fd.get('body') ?? '').trim();
+      if (!body) return;
+      const r = await fetch(`/api/v1/activities/${activityId}/comments`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body }),
+      });
+      if (r.ok) {
+        form.reset();
+        await loadComments(activityId);
+      }
+    });
+  }
+
+  function escape(s: string) {
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 
   function renderHeader(a: ActivityRow) {

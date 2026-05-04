@@ -1,0 +1,120 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base title="Feed · open-strava">
+  <section class="space-y-6">
+    <header class="flex items-center justify-between">
+      <h1 class="text-2xl font-bold">Feed</h1>
+      <a href="/upload" class="text-sm text-accent hover:underline">+ Upload activity</a>
+    </header>
+    <p id="feed-subtitle" class="text-sm text-neutral-600 dark:text-neutral-400">Loading…</p>
+    <ul id="feed-list" class="space-y-3"></ul>
+    <button
+      id="feed-more"
+      class="hidden rounded border border-neutral-300 px-4 py-2 text-sm hover:border-accent dark:border-neutral-700"
+      >Load more</button
+    >
+  </section>
+</Base>
+
+<script>
+  type Item = {
+    id: string;
+    athleteId: string;
+    handle: string;
+    displayName: string | null;
+    sport: string;
+    name: string | null;
+    startedAt: number;
+    totalSeconds: number;
+    distanceM: number | null;
+    np: number | null;
+    tss: number | null;
+  };
+
+  const list = document.getElementById('feed-list')!;
+  const subtitle = document.getElementById('feed-subtitle')!;
+  const moreBtn = document.getElementById('feed-more') as HTMLButtonElement;
+  let cursor: string | null = null;
+
+  load().catch((err) => (subtitle.textContent = `Failed: ${(err as Error).message}`));
+  moreBtn.addEventListener('click', () => load().catch((err) => (subtitle.textContent = `Failed: ${err}`)));
+
+  async function load() {
+    const url = cursor ? `/api/v1/feed?cursor=${cursor}` : '/api/v1/feed';
+    const res = await fetch(url, { credentials: 'include' });
+    if (!res.ok) {
+      if (res.status === 401) {
+        subtitle.innerHTML = `Please <a class="text-accent hover:underline" href="/login">log in</a>.`;
+        return;
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const body = (await res.json()) as { items: Item[]; nextCursor: string | null };
+    if (cursor === null) {
+      subtitle.textContent =
+        body.items.length === 0 ? 'No activities yet.' : `${body.items.length} most recent`;
+    }
+    for (const it of body.items) list.appendChild(renderItem(it));
+    cursor = body.nextCursor;
+    moreBtn.classList.toggle('hidden', !cursor);
+  }
+
+  function renderItem(it: Item): HTMLLIElement {
+    const li = document.createElement('li');
+    li.className = 'rounded border border-neutral-200 p-4 dark:border-neutral-800';
+    const date = new Date(it.startedAt * 1000).toLocaleString();
+    const dist = it.distanceM ? `${(it.distanceM / 1000).toFixed(2)} km` : '';
+    const dur = formatDuration(it.totalSeconds);
+    const np = it.np != null ? ` · NP ${Math.round(it.np)} W` : '';
+    const tss = it.tss != null ? ` · TSS ${it.tss.toFixed(1)}` : '';
+    li.innerHTML = `
+      <div class="flex items-baseline justify-between">
+        <a href="/athletes/${escape(it.handle)}" class="font-semibold hover:text-accent">${escape(
+          it.displayName ?? it.handle,
+        )}</a>
+        <span class="text-xs text-neutral-500">${escape(date)}</span>
+      </div>
+      <a href="/activity/${escape(it.id)}" class="mt-1 block hover:text-accent">
+        <strong>${escape(it.name ?? it.sport)}</strong>
+        <span class="ml-2 text-sm text-neutral-600 dark:text-neutral-400">${escape(
+          it.sport,
+        )} · ${escape(dur)}${dist ? ` · ${escape(dist)}` : ''}${escape(np)}${escape(tss)}</span>
+      </a>
+      <div class="mt-2 flex gap-3 text-sm">
+        <button data-id="${escape(it.id)}" class="kudos-btn text-neutral-600 hover:text-accent">👍 Kudos</button>
+        <a href="/activity/${escape(it.id)}#comments" class="text-neutral-600 hover:text-accent">💬 Comments</a>
+      </div>
+    `;
+    li.querySelector('.kudos-btn')!.addEventListener('click', async (ev) => {
+      const btn = ev.currentTarget as HTMLButtonElement;
+      const id = btn.dataset.id!;
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/v1/activities/${id}/kudos`, {
+          method: 'POST',
+          credentials: 'include',
+        });
+        if (res.ok) btn.textContent = '✓ Kudos';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    return li;
+  }
+
+  function formatDuration(s: number) {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    return `${h}h ${String(m).padStart(2, '0')}m`;
+  }
+
+  function escape(s: string) {
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+</script>

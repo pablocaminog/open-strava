@@ -307,6 +307,55 @@ export class FakeD1 implements D1Database {
         };
       });
     }
+    if (trimmed.includes('FROM users WHERE handle = ?')) {
+      const handle = String(params[0] ?? '').toLowerCase();
+      const u = this.users.find((r) => String(r.handle).toLowerCase() === handle);
+      return u
+        ? [
+            {
+              id: u.id,
+              handle: u.handle,
+              displayName: u.displayName ?? null,
+              bio: u.bio ?? null,
+              location: u.location ?? null,
+              createdAt: u.created_at ?? 0,
+            },
+          ]
+        : [];
+    }
+    if (trimmed.includes('SELECT COUNT(*) FROM follows WHERE followee_id')) {
+      const id = params[0];
+      return [
+        {
+          followers: this.follows.filter((f) => f.followee_id === id).length,
+          following: this.follows.filter((f) => f.follower_id === id).length,
+          activities: this.activities.filter((a) => a.athlete_id === id).length,
+        },
+      ];
+    }
+    if (
+      trimmed.startsWith('SELECT id, sport, name, started_at') &&
+      trimmed.includes('FROM activities')
+    ) {
+      const id = params[0];
+      const cursor = params.length === 3 ? Number(params[1]) : null;
+      const limit = Number(params[params.length - 1]);
+      const rows = this.activities
+        .filter((a) => a.athlete_id === id)
+        .filter((a) => (cursor != null ? Number(a.started_at) < cursor : true))
+        .sort((a, b) => Number(b.started_at) - Number(a.started_at))
+        .slice(0, limit);
+      return rows.map((a) => ({
+        id: a.id,
+        sport: a.sport,
+        name: a.name ?? null,
+        startedAt: a.started_at,
+        totalSeconds: a.total_seconds,
+        distanceM: a.distance_m ?? null,
+        np: a.np ?? null,
+        tss: a.tss ?? null,
+      }));
+    }
     if (trimmed.startsWith('SELECT 1 AS x FROM follows')) {
       const [follower_id, followee_id] = params;
       const f = this.follows.find(

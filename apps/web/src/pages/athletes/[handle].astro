@@ -1,0 +1,140 @@
+---
+import Base from '../../layouts/Base.astro';
+const { handle } = Astro.params;
+---
+
+<Base title={`@${handle} · open-strava`}>
+  <section class="space-y-6">
+    <header id="profile-header" class="space-y-2">
+      <h1 class="text-2xl font-bold">Loading…</h1>
+    </header>
+    <ul id="profile-activities" class="space-y-2"></ul>
+  </section>
+</Base>
+
+<script define:vars={{ handle }}>
+  window.__OPEN_STRAVA_HANDLE__ = handle;
+</script>
+
+<script>
+  type ProfileResponse = {
+    athlete: {
+      id: string;
+      handle: string;
+      displayName: string | null;
+      bio: string | null;
+      location: string | null;
+      createdAt: number;
+    };
+    counts: { followers: number; following: number; activities: number };
+    isSelf: boolean;
+    isFollowing: boolean;
+  };
+
+  type Activity = {
+    id: string;
+    sport: string;
+    name: string | null;
+    startedAt: number;
+    totalSeconds: number;
+    distanceM: number | null;
+    tss: number | null;
+  };
+
+  const handle = (window as unknown as { __OPEN_STRAVA_HANDLE__: string }).__OPEN_STRAVA_HANDLE__;
+  const header = document.getElementById('profile-header')!;
+  const list = document.getElementById('profile-activities')!;
+
+  init().catch((err) => (header.innerHTML = `<h1 class="text-2xl font-bold">Error: ${(err as Error).message}</h1>`));
+
+  async function init() {
+    const r = await fetch(`/api/v1/athletes/by-handle/${encodeURIComponent(handle)}`, {
+      credentials: 'include',
+    });
+    if (r.status === 401) {
+      header.innerHTML = `Please <a class="text-accent hover:underline" href="/login">log in</a>.`;
+      return;
+    }
+    if (!r.ok) {
+      header.innerHTML = `<h1 class="text-2xl font-bold">Athlete not found</h1>`;
+      return;
+    }
+    const profile = (await r.json()) as ProfileResponse;
+    renderHeader(profile);
+    await loadActivities(profile.athlete.id);
+  }
+
+  function renderHeader(p: ProfileResponse) {
+    const display = p.athlete.displayName ?? p.athlete.handle;
+    const bio = p.athlete.bio ? `<p class="text-sm text-neutral-600 dark:text-neutral-400">${escape(p.athlete.bio)}</p>` : '';
+    const loc = p.athlete.location
+      ? `<p class="text-xs text-neutral-500">${escape(p.athlete.location)}</p>`
+      : '';
+    const followBtn = p.isSelf
+      ? ''
+      : `<button id="follow-btn" data-following="${p.isFollowing}" class="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-accent dark:border-neutral-700">${
+          p.isFollowing ? 'Unfollow' : 'Follow'
+        }</button>`;
+    header.innerHTML = `
+      <h1 class="text-2xl font-bold">${escape(display)}</h1>
+      <p class="text-sm text-neutral-500">@${escape(p.athlete.handle)}</p>
+      ${bio}${loc}
+      <div class="flex gap-4 text-sm pt-2">
+        <span><strong>${p.counts.activities}</strong> activities</span>
+        <span><strong>${p.counts.followers}</strong> followers</span>
+        <span><strong>${p.counts.following}</strong> following</span>
+        ${followBtn}
+      </div>
+    `;
+    if (!p.isSelf) wireFollowButton(p.athlete.id);
+  }
+
+  function wireFollowButton(athleteId: string) {
+    const btn = document.getElementById('follow-btn') as HTMLButtonElement | null;
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const isFollowing = btn.dataset.following === 'true';
+      const method = isFollowing ? 'DELETE' : 'POST';
+      const r = await fetch(`/api/v1/follows/${athleteId}`, { method, credentials: 'include' });
+      if (r.ok) {
+        btn.dataset.following = String(!isFollowing);
+        btn.textContent = isFollowing ? 'Follow' : 'Unfollow';
+      }
+      btn.disabled = false;
+    });
+  }
+
+  async function loadActivities(id: string) {
+    const r = await fetch(`/api/v1/athletes/${id}/activities`, { credentials: 'include' });
+    if (!r.ok) return;
+    const body = (await r.json()) as { items: Activity[] };
+    list.innerHTML = '';
+    if (body.items.length === 0) {
+      list.innerHTML = `<li class="text-sm text-neutral-600 dark:text-neutral-400">No activities visible.</li>`;
+      return;
+    }
+    for (const a of body.items) {
+      const li = document.createElement('li');
+      li.className = 'rounded border border-neutral-200 p-3 dark:border-neutral-800';
+      const date = new Date(a.startedAt * 1000).toLocaleDateString();
+      const dist = a.distanceM ? ` · ${(a.distanceM / 1000).toFixed(2)} km` : '';
+      const tss = a.tss != null ? ` · TSS ${a.tss.toFixed(0)}` : '';
+      li.innerHTML = `
+        <a href="/activity/${escape(a.id)}" class="hover:text-accent">
+          <strong>${escape(a.name ?? a.sport)}</strong>
+          <span class="ml-2 text-xs text-neutral-500">${escape(date)} · ${escape(a.sport)}${escape(dist)}${escape(tss)}</span>
+        </a>
+      `;
+      list.appendChild(li);
+    }
+  }
+
+  function escape(s: string) {
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+</script>
