@@ -50,6 +50,52 @@ import Base from '../layouts/Base.astro';
       <p id="save-status" aria-live="polite" class="text-sm"></p>
     </form>
 
+    <section class="space-y-3">
+      <h2 class="text-lg font-semibold">Connections</h2>
+      <ul class="space-y-2 text-sm">
+        <li class="flex items-center justify-between rounded border border-neutral-200 p-3 dark:border-neutral-800">
+          <div>
+            <p class="font-medium">Strava</p>
+            <p class="text-xs text-neutral-600 dark:text-neutral-400">
+              Backfill last 90 days. Also brings in Zwift rides synced to Strava.
+            </p>
+          </div>
+          <div class="flex gap-2">
+            <a href="/api/v1/auth/strava/start" class="rounded bg-accent px-3 py-1.5 text-white">Connect</a>
+            <button
+              type="button"
+              id="strava-import"
+              class="rounded border border-neutral-300 px-3 py-1.5 dark:border-neutral-700"
+              >Import</button
+            >
+          </div>
+        </li>
+        <li class="flex items-center justify-between rounded border border-neutral-200 p-3 dark:border-neutral-800">
+          <div>
+            <p class="font-medium">Garmin</p>
+            <p class="text-xs text-neutral-600 dark:text-neutral-400">
+              Auto-ingest from Garmin Connect via push webhooks. Requires Garmin developer access.
+            </p>
+          </div>
+          <a href="/api/v1/auth/garmin/start" class="rounded bg-accent px-3 py-1.5 text-white">Connect</a>
+        </li>
+        <li class="rounded border border-neutral-200 p-3 dark:border-neutral-800">
+          <p class="font-medium">Zwift</p>
+          <p class="text-xs text-neutral-600 dark:text-neutral-400">
+            Zwift has no public API. Two options:
+          </p>
+          <ol class="mt-1 list-decimal space-y-1 pl-5 text-xs text-neutral-600 dark:text-neutral-400">
+            <li>Connect Strava above — Zwift posts rides there automatically.</li>
+            <li>
+              Upload the FIT file directly from
+              <code class="rounded bg-neutral-100 px-1 dark:bg-neutral-900">Documents/Zwift/Activities/</code>
+              on the <a class="text-accent hover:underline" href="/upload">upload page</a>.
+            </li>
+          </ol>
+        </li>
+      </ul>
+    </section>
+
     <section class="space-y-2">
       <h2 class="text-lg font-semibold">API keys</h2>
       <p class="text-sm text-neutral-600 dark:text-neutral-400">
@@ -148,6 +194,31 @@ import Base from '../layouts/Base.astro';
       }
       keyList.appendChild(li);
     }
+  }
+
+  const stravaImportBtn = document.getElementById('strava-import') as HTMLButtonElement | null;
+  if (stravaImportBtn) {
+    stravaImportBtn.addEventListener('click', async () => {
+      stravaImportBtn.disabled = true;
+      stravaImportBtn.textContent = 'Importing…';
+      try {
+        const r = await fetch('/api/v1/me/import/strava', {
+          method: 'POST',
+          credentials: 'include',
+        });
+        if (r.ok) {
+          const body = (await r.json()) as { queued: number };
+          stravaImportBtn.textContent = `Queued ${body.queued}`;
+        } else {
+          stravaImportBtn.textContent = `Failed (${r.status})`;
+        }
+      } finally {
+        setTimeout(() => {
+          stravaImportBtn.disabled = false;
+          stravaImportBtn.textContent = 'Import';
+        }, 3000);
+      }
+    });
   }
 
   mintForm.addEventListener('submit', async (ev) => {

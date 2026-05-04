@@ -12,6 +12,8 @@ export interface Env {
   SESSION_SIGNING_KEY: string;
   STRAVA_CLIENT_ID?: string;
   STRAVA_CLIENT_SECRET?: string;
+  GARMIN_CONSUMER_KEY?: string;
+  GARMIN_CONSUMER_SECRET?: string;
   ARWEAVE_TURBO_TOKEN?: string;
   ATPROTO_PDS_URL?: string;
 

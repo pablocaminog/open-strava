@@ -21,6 +21,7 @@ import { exportRoutes } from './routes/exports.js';
 import { settingsRoutes } from './routes/settings.js';
 import { mcpRoutes } from './routes/mcp.js';
 import { stravaRoutes } from './routes/strava.js';
+import { garminRoutes } from './routes/garmin.js';
 import { permanenceRoutes } from './routes/permanence.js';
 import { atprotoRoutes } from './routes/atproto.js';
 import { queueHandler } from './pipeline/index.js';
@@ -53,6 +54,7 @@ export function buildApp(): Hono<{ Bindings: Env }> {
   app.route('/api/v1', exportRoutes);
   app.route('/api/v1', settingsRoutes);
   app.route('/api/v1', stravaRoutes);
+  app.route('/api/v1', garminRoutes);
   app.route('/api/v1', permanenceRoutes);
   app.route('/api/v1', atprotoRoutes);
   app.route('/mcp', mcpRoutes);
