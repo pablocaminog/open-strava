@@ -1,0 +1,54 @@
+{
+  // Root wrangler config so the Cloudflare "Clone a repository" /
+  // "Deploy to Cloudflare" flow can auto-detect the API worker.
+  // Paths are relative to this file.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pacelore-api",
+  "main": "apps/api/src/index.ts",
+  "compatibility_date": "2025-12-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "build": {
+    "command": "pnpm install --frozen-lockfile=false && pnpm --filter @pacelore/api typecheck",
+  },
+  "vars": {
+    "ENV": "dev",
+    "APP_ORIGIN": "https://pacelore.pages.dev",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pacelore",
+      "database_id": "REPLACE_WITH_D1_ID",
+      "migrations_dir": "infra/wrangler/migrations",
+    },
+  ],
+  "r2_buckets": [
+    { "binding": "RAW_BUCKET", "bucket_name": "pacelore-raw" },
+    { "binding": "PARSED_BUCKET", "bucket_name": "pacelore-parsed" },
+    { "binding": "EXPORTS_BUCKET", "bucket_name": "pacelore-exports" },
+  ],
+  "kv_namespaces": [
+    { "binding": "KV_SESSIONS", "id": "REPLACE_WITH_KV_SESSIONS_ID" },
+    { "binding": "KV_LEADERBOARDS", "id": "REPLACE_WITH_KV_LEADERBOARDS_ID" },
+    { "binding": "KV_FEED", "id": "REPLACE_WITH_KV_FEED_ID" },
+  ],
+  "queues": {
+    "producers": [{ "queue": "activity-ingest", "binding": "INGEST_QUEUE" }],
+    "consumers": [
+      {
+        "queue": "activity-ingest",
+        "max_batch_size": 5,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "activity-ingest-dlq",
+      },
+    ],
+  },
+  "observability": {
+    "logs": { "enabled": true },
+  },
+  "triggers": {
+    "crons": ["0 5 * * *"],
+  },
+}
