@@ -44,7 +44,7 @@ activityRoutes.get('/activities/:id', async (c) => {
     .first<ActivityRow>();
   if (!row) throw new HTTPException(404, { message: 'activity not found' });
 
-  if (!canView(row, session.userId)) {
+  if (!(await canView(c.env, row, session.userId))) {
     throw new HTTPException(403, { message: 'not allowed to view this activity' });
   }
 
@@ -69,7 +69,7 @@ activityRoutes.get('/activities/:id/stream', async (c) => {
     .bind(id)
     .first<{ id: string; athleteId: string; visibility: string; parsedR2Path: string | null }>();
   if (!row) throw new HTTPException(404, { message: 'activity not found' });
-  if (!canView(row, session.userId)) {
+  if (!(await canView(c.env, row, session.userId))) {
     throw new HTTPException(403, { message: 'not allowed' });
   }
   if (!row.parsedR2Path) {
@@ -83,6 +83,144 @@ activityRoutes.get('/activities/:id/stream', async (c) => {
       'Cache-Control': 'private, max-age=300',
     },
   });
+});
+
+activityRoutes.patch('/activities/:id', async (c) => {
+  const id = c.req.param('id');
+  const session = c.get('session');
+  const row = await c.env.DB.prepare('SELECT athlete_id AS athleteId FROM activities WHERE id = ?')
+    .bind(id)
+    .first<{ athleteId: string }>();
+  if (!row) throw new HTTPException(404, { message: 'activity not found' });
+  if (row.athleteId !== session.userId) throw new HTTPException(403, { message: 'not owner' });
+
+  const body = await readJsonBody<{ name?: string; description?: string; visibility?: string }>(
+    c.req.raw,
+  );
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  if (typeof body.name === 'string') {
+    if (body.name.length > 200) throw new HTTPException(400, { message: 'name too long' });
+    sets.push('name = ?');
+    vals.push(body.name);
+  }
+  if (typeof body.description === 'string') {
+    if (body.description.length > 4000)
+      throw new HTTPException(400, { message: 'description too long' });
+    sets.push('description = ?');
+    vals.push(body.description);
+  }
+  if (typeof body.visibility === 'string') {
+    if (!['private', 'followers', 'public'].includes(body.visibility)) {
+      throw new HTTPException(400, { message: 'invalid visibility' });
+    }
+    sets.push('visibility = ?');
+    vals.push(body.visibility);
+  }
+  if (sets.length === 0) return c.json({ ok: true, changed: false });
+  await c.env.DB.prepare(`UPDATE activities SET ${sets.join(', ')} WHERE id = ?`)
+    .bind(...vals, id)
+    .run();
+  return c.json({ ok: true, changed: true });
+});
+
+activityRoutes.post('/activities/:id/kudos', async (c) => {
+  const id = c.req.param('id');
+  const session = c.get('session');
+  const row = await activityVisibilityRow(c.env, id);
+  if (!row) throw new HTTPException(404, { message: 'activity not found' });
+  if (!(await canView(c.env, row, session.userId))) {
+    throw new HTTPException(403, { message: 'not allowed' });
+  }
+  await c.env.DB.prepare(
+    'INSERT INTO kudos (activity_id, athlete_id) VALUES (?, ?) ON CONFLICT DO NOTHING',
+  )
+    .bind(id, session.userId)
+    .run();
+  return c.json({ ok: true });
+});
+
+activityRoutes.delete('/activities/:id/kudos', async (c) => {
+  const id = c.req.param('id');
+  const session = c.get('session');
+  await c.env.DB.prepare('DELETE FROM kudos WHERE activity_id = ? AND athlete_id = ?')
+    .bind(id, session.userId)
+    .run();
+  return c.json({ ok: true });
+});
+
+activityRoutes.get('/activities/:id/kudos', async (c) => {
+  const id = c.req.param('id');
+  const session = c.get('session');
+  const row = await activityVisibilityRow(c.env, id);
+  if (!row) throw new HTTPException(404, { message: 'activity not found' });
+  if (!(await canView(c.env, row, session.userId))) {
+    throw new HTTPException(403, { message: 'not allowed' });
+  }
+  const result = await c.env.DB.prepare(
+    `SELECT k.athlete_id AS athleteId, u.handle, u.display_name AS displayName
+       FROM kudos k JOIN users u ON u.id = k.athlete_id
+      WHERE k.activity_id = ?
+      ORDER BY k.created_at DESC`,
+  )
+    .bind(id)
+    .all();
+  return c.json({ items: result.results ?? [] });
+});
+
+activityRoutes.post('/activities/:id/comments', async (c) => {
+  const id = c.req.param('id');
+  const session = c.get('session');
+  const row = await activityVisibilityRow(c.env, id);
+  if (!row) throw new HTTPException(404, { message: 'activity not found' });
+  if (!(await canView(c.env, row, session.userId))) {
+    throw new HTTPException(403, { message: 'not allowed' });
+  }
+  const body = await readJsonBody<{ body?: string; parentId?: string }>(c.req.raw);
+  const text = (body.body ?? '').trim();
+  if (text.length === 0) throw new HTTPException(400, { message: 'body required' });
+  if (text.length > 2000) throw new HTTPException(400, { message: 'body too long (max 2000)' });
+
+  const commentId = crypto.randomUUID();
+  await c.env.DB.prepare(
+    'INSERT INTO comments (id, activity_id, athlete_id, body, parent_id) VALUES (?, ?, ?, ?, ?)',
+  )
+    .bind(commentId, id, session.userId, text, body.parentId ?? null)
+    .run();
+  return c.json({ id: commentId, body: text });
+});
+
+activityRoutes.get('/activities/:id/comments', async (c) => {
+  const id = c.req.param('id');
+  const session = c.get('session');
+  const row = await activityVisibilityRow(c.env, id);
+  if (!row) throw new HTTPException(404, { message: 'activity not found' });
+  if (!(await canView(c.env, row, session.userId))) {
+    throw new HTTPException(403, { message: 'not allowed' });
+  }
+  const result = await c.env.DB.prepare(
+    `SELECT c.id, c.athlete_id AS athleteId, u.handle, u.display_name AS displayName,
+            c.body, c.parent_id AS parentId, c.created_at AS createdAt
+       FROM comments c JOIN users u ON u.id = c.athlete_id
+      WHERE c.activity_id = ?
+      ORDER BY c.created_at ASC`,
+  )
+    .bind(id)
+    .all();
+  return c.json({ items: result.results ?? [] });
+});
+
+activityRoutes.delete('/activities/:id/comments/:commentId', async (c) => {
+  const session = c.get('session');
+  const cid = c.req.param('commentId');
+  const owned = await c.env.DB.prepare('SELECT athlete_id AS athleteId FROM comments WHERE id = ?')
+    .bind(cid)
+    .first<{ athleteId: string }>();
+  if (!owned) throw new HTTPException(404, { message: 'comment not found' });
+  if (owned.athleteId !== session.userId)
+    throw new HTTPException(403, { message: 'not your comment' });
+  await c.env.DB.prepare('DELETE FROM comments WHERE id = ?').bind(cid).run();
+  return c.json({ ok: true });
 });
 
 activityRoutes.post('/activities', async (c) => {
@@ -154,11 +292,45 @@ interface ActivityRow {
   [k: string]: unknown;
 }
 
-function canView(row: { athleteId: string; visibility: string }, viewerId: string): boolean {
+async function canView(
+  env: Env,
+  row: { athleteId: string; visibility: string },
+  viewerId: string,
+): Promise<boolean> {
   if (row.athleteId === viewerId) return true;
   if (row.visibility === 'public') return true;
-  // 'followers' visibility check deferred until the follow graph is wired.
+  if (row.visibility === 'followers') {
+    const edge = await env.DB.prepare(
+      'SELECT 1 AS x FROM follows WHERE follower_id = ? AND followee_id = ?',
+    )
+      .bind(viewerId, row.athleteId)
+      .first<{ x: number }>();
+    return !!edge;
+  }
   return false;
+}
+
+async function readJsonBody<T>(req: Request): Promise<T> {
+  if (!req.headers.get('content-type')?.includes('application/json')) {
+    throw new HTTPException(415, { message: 'expected application/json' });
+  }
+  try {
+    return (await req.json()) as T;
+  } catch {
+    throw new HTTPException(400, { message: 'invalid JSON body' });
+  }
+}
+
+async function activityVisibilityRow(
+  env: Env,
+  id: string,
+): Promise<{ athleteId: string; visibility: string } | null> {
+  const row = await env.DB.prepare(
+    'SELECT athlete_id AS athleteId, visibility FROM activities WHERE id = ?',
+  )
+    .bind(id)
+    .first<{ athleteId: string; visibility: string }>();
+  return row ?? null;
 }
 
 async function readBody(req: Request): Promise<ArrayBuffer> {

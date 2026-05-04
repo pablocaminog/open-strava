@@ -75,6 +75,8 @@ export class FakeD1 implements D1Database {
   activities: Row[] = [];
   activityMetrics: Row[] = [];
   follows: Row[] = [];
+  kudos: Row[] = [];
+  comments: Row[] = [];
   pmcDaily: Map<string, Row> = new Map();
 
   prepare(sql: string): D1PreparedStatement {
@@ -304,6 +306,103 @@ export class FakeD1 implements D1Database {
           createdAt: edge.created_at,
         };
       });
+    }
+    if (trimmed.startsWith('SELECT 1 AS x FROM follows')) {
+      const [follower_id, followee_id] = params;
+      const f = this.follows.find(
+        (r) => r.follower_id === follower_id && r.followee_id === followee_id,
+      );
+      return f ? [{ x: 1 }] : [];
+    }
+    if (trimmed.startsWith('SELECT athlete_id AS athleteId, visibility FROM activities')) {
+      const id = params[0];
+      const a = this.activities.find((r) => r.id === id);
+      return a ? [{ athleteId: a.athlete_id, visibility: a.visibility ?? 'private' }] : [];
+    }
+    if (trimmed.startsWith('SELECT athlete_id AS athleteId FROM activities')) {
+      const id = params[0];
+      const a = this.activities.find((r) => r.id === id);
+      return a ? [{ athleteId: a.athlete_id }] : [];
+    }
+    if (trimmed.startsWith('UPDATE activities SET')) {
+      const id = params[params.length - 1];
+      const a = this.activities.find((r) => r.id === id);
+      if (!a) return [];
+      const setMatch = trimmed.match(/SET (.+) WHERE/);
+      if (!setMatch) return [];
+      const cols = setMatch[1]!.split(',').map((s) => s.trim().split(' ')[0]!);
+      cols.forEach((col, i) => {
+        a[col] = params[i];
+      });
+      return [];
+    }
+    if (trimmed.startsWith('INSERT INTO kudos')) {
+      const [activity_id, athlete_id] = params;
+      if (!this.kudos.find((r) => r.activity_id === activity_id && r.athlete_id === athlete_id)) {
+        this.kudos.push({ activity_id, athlete_id, created_at: Math.floor(Date.now() / 1000) });
+      }
+      return [];
+    }
+    if (trimmed.startsWith('DELETE FROM kudos')) {
+      const [activity_id, athlete_id] = params;
+      this.kudos = this.kudos.filter(
+        (r) => !(r.activity_id === activity_id && r.athlete_id === athlete_id),
+      );
+      return [];
+    }
+    if (trimmed.startsWith('SELECT k.athlete_id AS athleteId')) {
+      const aid = params[0];
+      return this.kudos
+        .filter((k) => k.activity_id === aid)
+        .sort((a, b) => Number(b.created_at) - Number(a.created_at))
+        .map((k) => {
+          const u = this.users.find((r) => r.id === k.athlete_id);
+          return {
+            athleteId: k.athlete_id,
+            handle: u?.handle ?? null,
+            displayName: u?.displayName ?? null,
+          };
+        });
+    }
+    if (trimmed.startsWith('INSERT INTO comments')) {
+      const [id, activity_id, athlete_id, body, parent_id] = params;
+      this.comments.push({
+        id,
+        activity_id,
+        athlete_id,
+        body,
+        parent_id,
+        created_at: Math.floor(Date.now() / 1000),
+      });
+      return [];
+    }
+    if (trimmed.startsWith('SELECT c.id, c.athlete_id AS athleteId')) {
+      const aid = params[0];
+      return this.comments
+        .filter((c) => c.activity_id === aid)
+        .sort((a, b) => Number(a.created_at) - Number(b.created_at))
+        .map((c) => {
+          const u = this.users.find((r) => r.id === c.athlete_id);
+          return {
+            id: c.id,
+            athleteId: c.athlete_id,
+            handle: u?.handle ?? null,
+            displayName: u?.displayName ?? null,
+            body: c.body,
+            parentId: c.parent_id ?? null,
+            createdAt: c.created_at,
+          };
+        });
+    }
+    if (trimmed.startsWith('SELECT athlete_id AS athleteId FROM comments')) {
+      const id = params[0];
+      const c = this.comments.find((r) => r.id === id);
+      return c ? [{ athleteId: c.athlete_id }] : [];
+    }
+    if (trimmed.startsWith('DELETE FROM comments')) {
+      const id = params[0];
+      this.comments = this.comments.filter((c) => c.id !== id);
+      return [];
     }
     if (trimmed.includes('FROM activities a') && trimmed.includes('JOIN users u')) {
       const selfId = params[0];
