@@ -305,6 +305,42 @@ export class FakeD1 implements D1Database {
         };
       });
     }
+    if (trimmed.includes('FROM activities a') && trimmed.includes('JOIN users u')) {
+      const selfId = params[0];
+      const followerId = params[1];
+      const cursor = params.length === 4 ? Number(params[2]) : null;
+      const limit = Number(params[params.length - 1]);
+      const followeeIds = new Set(
+        this.follows.filter((f) => f.follower_id === followerId).map((f) => f.followee_id),
+      );
+      const visible = this.activities.filter((a) => {
+        if (a.athlete_id === selfId) return true;
+        if (a.visibility === 'public') return true;
+        if (a.visibility === 'followers' && followeeIds.has(a.athlete_id)) return true;
+        return false;
+      });
+      const filtered = visible.filter((a) =>
+        cursor != null ? Number(a.started_at) < cursor : true,
+      );
+      filtered.sort((a, b) => Number(b.started_at) - Number(a.started_at));
+      return filtered.slice(0, limit).map((a) => {
+        const u = this.users.find((r) => r.id === a.athlete_id);
+        return {
+          id: a.id,
+          athleteId: a.athlete_id,
+          handle: u?.handle ?? null,
+          displayName: u?.displayName ?? null,
+          sport: a.sport,
+          name: a.name ?? null,
+          startedAt: a.started_at,
+          totalSeconds: a.total_seconds,
+          distanceM: a.distance_m ?? null,
+          np: a.np ?? null,
+          tss: a.tss ?? null,
+          hrAvg: a.hr_avg ?? null,
+        };
+      });
+    }
     if (trimmed.startsWith('SELECT date, tss FROM pmc_daily')) {
       const athleteId = params[0];
       const out: Row[] = [];

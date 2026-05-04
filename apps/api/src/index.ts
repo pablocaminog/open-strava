@@ -20,6 +20,7 @@ import { authRoutes } from './routes/auth.js';
 import { activityRoutes } from './routes/activities.js';
 import { athleteRoutes } from './routes/athletes.js';
 import { followRoutes } from './routes/follows.js';
+import { feedRoutes } from './routes/feed.js';
 import type { Env } from './env.js';
 
 export function buildApp(): Hono<{ Bindings: Env }> {
@@ -41,6 +42,7 @@ export function buildApp(): Hono<{ Bindings: Env }> {
   app.route('/api/v1', activityRoutes);
   app.route('/api/v1', athleteRoutes);
   app.route('/api/v1', followRoutes);
+  app.route('/api/v1', feedRoutes);
 
   app.notFound((c) => c.json({ error: 'not_found', status: 404 }, 404));
   return app;
