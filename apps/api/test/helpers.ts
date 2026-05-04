@@ -77,6 +77,13 @@ export class FakeD1 implements D1Database {
   follows: Row[] = [];
   kudos: Row[] = [];
   comments: Row[] = [];
+  segments: Row[] = [];
+  segmentEfforts: Row[] = [];
+  clubs: Row[] = [];
+  clubMembers: Row[] = [];
+  events: Row[] = [];
+  eventInvites: Row[] = [];
+  apiKeys: Row[] = [];
   pmcDaily: Map<string, Row> = new Map();
 
   prepare(sql: string): D1PreparedStatement {
@@ -306,6 +313,142 @@ export class FakeD1 implements D1Database {
           createdAt: edge.created_at,
         };
       });
+    }
+    if (trimmed.startsWith('SELECT id FROM segments WHERE id')) {
+      const id = params[0];
+      const s = this.segments.find((r) => r.id === id);
+      return s ? [{ id: s.id }] : [];
+    }
+    if (trimmed.includes('FROM segment_efforts e') && trimmed.includes('JOIN users u')) {
+      const segId = params[0];
+      const cutoff = params.length === 3 ? Number(params[1]) : null;
+      const limit = Number(params[params.length - 1]);
+      const efforts = this.segmentEfforts
+        .filter((e) => e.segment_id === segId)
+        .filter((e) => (cutoff != null ? Number(e.started_at) >= cutoff : true))
+        .sort((a, b) => Number(a.time_seconds) - Number(b.time_seconds))
+        .slice(0, limit);
+      return efforts.map((e) => {
+        const u = this.users.find((r) => r.id === e.athlete_id);
+        return {
+          effortId: e.id,
+          athleteId: e.athlete_id,
+          handle: u?.handle ?? null,
+          displayName: u?.displayName ?? null,
+          timeSeconds: e.time_seconds,
+          startedAt: e.started_at,
+        };
+      });
+    }
+    if (trimmed.startsWith('SELECT id, polyline FROM segments')) {
+      const [sport, maxLat, minLat, maxLng, minLng] = params as unknown as [
+        string,
+        number,
+        number,
+        number,
+        number,
+      ];
+      return this.segments
+        .filter(
+          (s) =>
+            s.sport === sport &&
+            Number(s.bbox_min_lat) <= maxLat &&
+            Number(s.bbox_max_lat) >= minLat &&
+            Number(s.bbox_min_lng) <= maxLng &&
+            Number(s.bbox_max_lng) >= minLng,
+        )
+        .map((s) => ({ id: s.id, polyline: s.polyline }));
+    }
+    if (trimmed.startsWith('INSERT INTO segment_efforts')) {
+      const [id, segment_id, athlete_id, activity_id, time_seconds, started_at] = params;
+      this.segmentEfforts.push({
+        id,
+        segment_id,
+        athlete_id,
+        activity_id,
+        time_seconds,
+        started_at,
+        created_at: Math.floor(Date.now() / 1000),
+      });
+      return [];
+    }
+    if (trimmed.startsWith('INSERT INTO segments')) {
+      const [
+        id,
+        name,
+        sport,
+        polyline,
+        distance_m,
+        bbox_min_lat,
+        bbox_min_lng,
+        bbox_max_lat,
+        bbox_max_lng,
+        created_by,
+      ] = params;
+      this.segments.push({
+        id,
+        name,
+        sport,
+        polyline,
+        distance_m,
+        bbox_min_lat,
+        bbox_min_lng,
+        bbox_max_lat,
+        bbox_max_lng,
+        created_by,
+        created_at: Math.floor(Date.now() / 1000),
+      });
+      return [];
+    }
+    if (trimmed.startsWith('SELECT id, name, sport, polyline')) {
+      const id = params[0];
+      const s = this.segments.find((r) => r.id === id);
+      return s
+        ? [
+            {
+              id: s.id,
+              name: s.name,
+              sport: s.sport,
+              polyline: s.polyline,
+              distanceM: s.distance_m,
+              avgGrade: null,
+              bboxMinLat: s.bbox_min_lat,
+              bboxMinLng: s.bbox_min_lng,
+              bboxMaxLat: s.bbox_max_lat,
+              bboxMaxLng: s.bbox_max_lng,
+              createdBy: s.created_by,
+              createdAt: s.created_at,
+            },
+          ]
+        : [];
+    }
+    if (
+      trimmed.startsWith('SELECT id, name, sport, distance_m') &&
+      trimmed.includes('FROM segments')
+    ) {
+      const [maxLat, minLat, maxLng, minLng, ...rest] = params as unknown as number[];
+      const sportFilter = rest.length === 2 ? String(rest[0]) : null;
+      const limit = Number(rest[rest.length - 1]);
+      return this.segments
+        .filter(
+          (s) =>
+            Number(s.bbox_min_lat) <= maxLat &&
+            Number(s.bbox_max_lat) >= minLat &&
+            Number(s.bbox_min_lng) <= maxLng &&
+            Number(s.bbox_max_lng) >= minLng &&
+            (sportFilter ? s.sport === sportFilter : true),
+        )
+        .slice(0, limit)
+        .map((s) => ({
+          id: s.id,
+          name: s.name,
+          sport: s.sport,
+          distanceM: s.distance_m,
+          bboxMinLat: s.bbox_min_lat,
+          bboxMinLng: s.bbox_min_lng,
+          bboxMaxLat: s.bbox_max_lat,
+          bboxMaxLng: s.bbox_max_lng,
+        }));
     }
     if (trimmed.includes('FROM users WHERE handle = ?')) {
       const handle = String(params[0] ?? '').toLowerCase();

@@ -7,8 +7,10 @@
  */
 
 import type { ActivityRecord } from '@open-strava/fit-parser';
+import { findSegmentEfforts, type ActivityPoint, type Segment } from '@open-strava/segments';
 import type { Env, IngestJob } from '../env.js';
 import type { ActivitySummary, MetricKv } from './metrics.js';
+import { uuidv7 } from '../util/uuid.js';
 
 export interface PersistInput {
   job: IngestJob;
@@ -83,6 +85,10 @@ export async function persistActivity(env: Env, input: PersistInput): Promise<vo
     await env.DB.batch(stmts);
   }
 
+  // Segment effort detection — bbox prefilter against the activity's
+  // bbox via SQL, then DTW match in-process.
+  await detectSegmentEfforts(env, job, activity);
+
   // PMC: bump pmc_daily.tss for the activity's date. CTL/ATL/TSB are
   // recomputed by a periodic cron (T per architecture doc) — keeping
   // the hot path cheap.
@@ -98,6 +104,66 @@ export async function persistActivity(env: Env, input: PersistInput): Promise<vo
        ON CONFLICT (athlete_id, date) DO UPDATE SET tss = pmc_daily.tss + excluded.tss`,
     )
       .bind(job.athleteId, dateStr, summary.tss)
+      .run();
+  }
+}
+
+async function detectSegmentEfforts(
+  env: Env,
+  job: IngestJob,
+  activity: ActivityRecord,
+): Promise<void> {
+  const points: ActivityPoint[] = [];
+  for (const s of activity.samples) {
+    if (typeof s.lat === 'number' && typeof s.lng === 'number') {
+      points.push({ t: s.t, lat: s.lat, lng: s.lng });
+    }
+  }
+  if (points.length < 10) return;
+
+  let minLat = points[0]!.lat;
+  let maxLat = minLat;
+  let minLng = points[0]!.lng;
+  let maxLng = minLng;
+  for (const p of points) {
+    if (p.lat < minLat) minLat = p.lat;
+    if (p.lat > maxLat) maxLat = p.lat;
+    if (p.lng < minLng) minLng = p.lng;
+    if (p.lng > maxLng) maxLng = p.lng;
+  }
+
+  const sport = activity.session.sport;
+  const candidates = await env.DB.prepare(
+    `SELECT id, polyline FROM segments
+       WHERE sport = ?
+         AND bbox_min_lat <= ? AND bbox_max_lat >= ?
+         AND bbox_min_lng <= ? AND bbox_max_lng >= ?
+       LIMIT 100`,
+  )
+    .bind(sport, maxLat, minLat, maxLng, minLng)
+    .all<{ id: string; polyline: string }>();
+
+  const segs: Segment[] = (candidates.results ?? []).map((row) => ({
+    id: row.id,
+    polyline: (JSON.parse(row.polyline) as [number, number][]).map((p) => ({
+      lat: p[0],
+      lng: p[1],
+    })),
+  }));
+  if (segs.length === 0) return;
+
+  const efforts = findSegmentEfforts(points, segs);
+  for (const e of efforts) {
+    const effortId = uuidv7();
+    const startedAt =
+      Math.floor(activity.session.startedAt.getTime() / 1000) + Math.floor(e.startSeconds);
+    const time = Math.max(1, Math.floor(e.endSeconds - e.startSeconds));
+    await env.DB.prepare(
+      `INSERT INTO segment_efforts
+         (id, segment_id, athlete_id, activity_id, time_seconds, started_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(effortId, e.segmentId, job.athleteId, job.activityId, time, startedAt)
       .run();
   }
 }
