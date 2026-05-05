@@ -14,7 +14,7 @@
   },
   "vars": {
     "ENV": "production",
-    "APP_ORIGIN": "https://pacelore.pages.dev",
+    "APP_ORIGIN": "https://pacelore.com",
   },
   "d1_databases": [
     {
