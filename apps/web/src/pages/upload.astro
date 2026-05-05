@@ -3,39 +3,193 @@ import Shell from '../layouts/Shell.astro';
 import Icon from '../components/Icon.astro';
 ---
 
-<Shell title="Upload" active="upload">
-  <div class="stack" style="gap: 20px; max-width: 720px;">
+<Shell title="Import" active="upload">
+  <div class="stack" style="gap: 24px;">
     <header>
-      <h1 class="h1" style="font-size: 28px;">Upload an activity</h1>
-      <p class="muted body-sm" style="margin-top: 4px;">
-        Drag a FIT, TCX, or GPX file onto the box, or click to choose. Your browser uploads it
-        directly to the API; parsing and metric computation happen in the background.
+      <h1 class="h1" style="font-size: 28px;">Import your training history</h1>
+      <p class="muted body-sm" style="margin-top: 4px; max-width: 70ch;">
+        Bring everything in. Connect Strava or Garmin for ongoing sync, or drop a full export
+        archive (.zip / .fit.gz / folder) from any platform — Strava, Garmin, TrainingPeaks,
+        Wahoo, Coros, Polar Flow, Apple Health. Files run through the same parse pipeline as live
+        ingest, so metrics and PMC stay consistent.
       </p>
     </header>
 
-    <label id="drop" class="dropzone">
-      <div class="stack" style="gap: 6px; align-items: center;">
-        <Icon name="upload" size={28} />
-        <strong style="font-size: 15px;">Drop file here</strong>
-        <span class="caption">or click to choose · max 25 MB · .fit / .tcx / .gpx</span>
+    <section class="grid-tiles" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px;">
+      <div class="panel">
+        <div class="panel-body stack" style="gap: 10px;">
+          <span class="metric-label">Connect</span>
+          <h3 class="h4">Strava</h3>
+          <p class="caption" style="margin: 0;">
+            OAuth + backfill. Pulls activities and Zwift rides synced to Strava.
+          </p>
+          <p class="caption" style="margin: 0;">
+            <strong>Today:</strong> last 90 days. Full all-time backfill ships with the next API
+            release.
+          </p>
+          <div class="row" style="gap: 8px; margin-top: 4px;">
+            <a class="btn btn-primary btn-sm" href="/api/v1/auth/strava/start">Connect</a>
+            <button id="strava-import" type="button" class="btn btn-secondary btn-sm">Backfill 90d</button>
+          </div>
+        </div>
       </div>
-      <input id="file-input" type="file" accept=".fit,.tcx,.gpx" style="display: none;" />
-    </label>
 
-    <ul id="results" class="stack" style="list-style: none; margin: 0; padding: 0; gap: 8px;" aria-live="polite"></ul>
+      <div class="panel">
+        <div class="panel-body stack" style="gap: 10px;">
+          <span class="metric-label">Connect</span>
+          <h3 class="h4">Garmin Connect</h3>
+          <p class="caption" style="margin: 0;">
+            OAuth + push webhooks. Every new activity lands within a minute. Requires Garmin
+            developer-program access.
+          </p>
+          <a class="btn btn-primary btn-sm" href="/api/v1/auth/garmin/start" style="align-self: flex-start;">Connect</a>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-body stack" style="gap: 10px;">
+          <span class="metric-label">Bulk archive</span>
+          <h3 class="h4">Drop a full export</h3>
+          <p class="caption" style="margin: 0;">
+            Works for the standard export archives from every major platform — Garmin, Strava,
+            TrainingPeaks, Wahoo, Coros, Polar Flow. Your browser unpacks the .zip locally and
+            uploads each session to the parse pipeline.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h3 class="h3" style="font-size: 16px;">Drop files</h3>
+        <span class="row-end caption">.fit · .tcx · .gpx · .fit.gz · .zip · whole folders</span>
+      </div>
+      <div class="panel-body stack" style="gap: 16px;">
+        <label id="drop" class="dropzone">
+          <div class="stack" style="gap: 6px; align-items: center;">
+            <Icon name="upload" size={28} />
+            <strong style="font-size: 15px;">Drop here</strong>
+            <span class="caption">
+              Or pick files / pick a folder. Anything we don't recognize is skipped.
+            </span>
+          </div>
+          <input id="file-input" type="file" multiple accept=".fit,.tcx,.gpx,.gz,.zip" style="display: none;" />
+        </label>
+
+        <div class="row" style="gap: 8px; flex-wrap: wrap;">
+          <button id="pick-files" type="button" class="btn btn-secondary btn-sm">
+            <Icon name="upload" size={14} /> Choose files
+          </button>
+          <button id="pick-folder" type="button" class="btn btn-secondary btn-sm">
+            <Icon name="upload" size={14} /> Choose folder
+          </button>
+          <input id="folder-input" type="file" multiple style="display: none;" />
+          <span class="row-end" style="font-family: var(--font-mono); font-size: 13px;">
+            <span class="metric-label" style="margin-right: 6px;">queue</span>
+            <span id="stats-queue">0</span> ·
+            <span class="metric-label" style="margin: 0 6px 0 8px;">ok</span>
+            <span id="stats-ok">0</span> ·
+            <span class="metric-label" style="margin: 0 6px 0 8px;">dupe</span>
+            <span id="stats-dupe">0</span> ·
+            <span class="metric-label" style="margin: 0 6px 0 8px;">fail</span>
+            <span id="stats-fail">0</span>
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <section class="stack" style="gap: 8px;">
+      <h3 class="h3" style="font-size: 16px;">Recent</h3>
+      <ul id="results" class="stack" style="list-style: none; margin: 0; padding: 0; gap: 6px; max-height: 480px; overflow-y: auto;" aria-live="polite"></ul>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h3 class="h3" style="font-size: 16px;">Where to find your export archive</h3>
+      </div>
+      <div class="panel-body stack" style="gap: 12px;">
+        <div>
+          <strong>Strava</strong>
+          <p class="caption" style="margin: 2px 0 0;">
+            Settings → My Account → Download or Delete Your Account → Get Started → "Request your
+            archive". Email arrives in a few hours with a .zip; activities live under
+            <code>activities/</code> as <code>.fit.gz</code> / <code>.tcx.gz</code>.
+          </p>
+        </div>
+        <div>
+          <strong>Garmin Connect</strong>
+          <p class="caption" style="margin: 2px 0 0;">
+            account.garmin.com → Manage Your Data → Export Your Data. ZIP includes
+            <code>DI_CONNECT/DI-Connect-Fitness/</code> with original .fit files.
+          </p>
+        </div>
+        <div>
+          <strong>TrainingPeaks</strong>
+          <p class="caption" style="margin: 2px 0 0;">
+            Calendar → bulk-export workouts to FIT (no full-archive button — exports are per-week
+            zips). Drop them all here at once.
+          </p>
+        </div>
+        <div>
+          <strong>Wahoo · Coros · Polar Flow · Suunto</strong>
+          <p class="caption" style="margin: 2px 0 0;">
+            All offer per-platform exports producing FIT/TCX. Drop the resulting folder or .zip.
+          </p>
+        </div>
+        <div>
+          <strong>Apple Health</strong>
+          <p class="caption" style="margin: 2px 0 0;">
+            Health app → profile → Export All Health Data → <code>export.zip</code>. The native iOS
+            app (when shipped) will read this directly via HealthKit.
+          </p>
+        </div>
+        <div>
+          <strong>Zwift</strong>
+          <p class="caption" style="margin: 2px 0 0;">
+            No public API. Either connect Strava (Zwift posts there) or drop the FIT files from
+            <code>Documents/Zwift/Activities/</code>.
+          </p>
+        </div>
+      </div>
+    </section>
   </div>
 </Shell>
 
 <script>
-  const drop = document.getElementById('drop')!;
-  const fileInput = document.getElementById('file-input') as HTMLInputElement;
-  const results = document.getElementById('results')!;
+  // Concurrency cap — small enough to stay polite to the API and the user's connection.
+  const CONCURRENCY = 4;
 
   const SOURCE_BY_EXT: Record<string, 'fit' | 'tcx' | 'gpx'> = {
     fit: 'fit',
     tcx: 'tcx',
     gpx: 'gpx',
   };
+
+  const drop = document.getElementById('drop')!;
+  const fileInput = document.getElementById('file-input') as HTMLInputElement;
+  const folderInput = document.getElementById('folder-input') as HTMLInputElement;
+  // webkitdirectory isn't typed in lib.dom; cast for the boolean attribute.
+  (folderInput as HTMLInputElement & { webkitdirectory?: boolean }).webkitdirectory = true;
+
+  const results = document.getElementById('results')!;
+  const queueEl = document.getElementById('stats-queue')!;
+  const okEl = document.getElementById('stats-ok')!;
+  const dupeEl = document.getElementById('stats-dupe')!;
+  const failEl = document.getElementById('stats-fail')!;
+
+  const stats = { queued: 0, ok: 0, dupe: 0, fail: 0 };
+  function paint() {
+    queueEl.textContent = String(stats.queued);
+    okEl.textContent = String(stats.ok);
+    dupeEl.textContent = String(stats.dupe);
+    failEl.textContent = String(stats.fail);
+  }
+
+  document.getElementById('pick-files')!.addEventListener('click', () => fileInput.click());
+  document.getElementById('pick-folder')!.addEventListener('click', () => folderInput.click());
+
+  fileInput.addEventListener('change', () => ingestList(Array.from(fileInput.files ?? [])));
+  folderInput.addEventListener('change', () => ingestList(Array.from(folderInput.files ?? [])));
 
   drop.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -45,63 +199,235 @@ import Icon from '../components/Icon.astro';
   drop.addEventListener('drop', async (e) => {
     e.preventDefault();
     drop.classList.remove('is-dragging');
-    const files = Array.from(e.dataTransfer?.files ?? []);
-    for (const f of files) await upload(f);
-  });
-  fileInput.addEventListener('change', async () => {
-    if (!fileInput.files) return;
-    for (const f of Array.from(fileInput.files)) await upload(f);
-    fileInput.value = '';
+    const items = Array.from(e.dataTransfer?.items ?? []);
+    const files = await collectFromItems(items, e.dataTransfer?.files);
+    await ingestList(files);
   });
 
-  async function upload(file: File) {
-    const ext = file.name.toLowerCase().split('.').pop() ?? '';
-    const source = SOURCE_BY_EXT[ext];
-    const li = document.createElement('li');
-    li.className = 'panel';
-    li.innerHTML = `<div style="padding: 12px 16px;"><span class="metric-label">uploading</span> · ${escape(file.name)}</div>`;
-    results.appendChild(li);
+  // ---------------- pipeline ----------------
 
-    if (!source) {
-      li.innerHTML = `<div style="padding: 12px 16px; color: var(--danger);">${escape(file.name)} — unsupported extension</div>`;
-      return;
-    }
-    if (file.size > 25 * 1024 * 1024) {
-      li.innerHTML = `<div style="padding: 12px 16px; color: var(--danger);">${escape(file.name)} — too large (>25 MB)</div>`;
-      return;
-    }
+  type WorkItem = { name: string; bytes: ArrayBuffer; source: 'fit' | 'tcx' | 'gpx' };
 
+  async function ingestList(files: File[]) {
+    if (files.length === 0) return;
+    // Expand archives + decompress as we go, so the UI starts uploading
+    // immediately on the first parsed file.
+    const queue: WorkItem[] = [];
+    for (const f of files) {
+      const expanded = await expand(f);
+      for (const w of expanded) queue.push(w);
+    }
+    stats.queued += queue.length;
+    paint();
+    await runQueue(queue);
+  }
+
+  async function runQueue(queue: WorkItem[]) {
+    let cursor = 0;
+    const workers: Promise<void>[] = [];
+    for (let i = 0; i < CONCURRENCY; i++) {
+      workers.push(
+        (async () => {
+          while (cursor < queue.length) {
+            const item = queue[cursor++]!;
+            await uploadOne(item);
+            stats.queued = Math.max(0, stats.queued - 1);
+            paint();
+          }
+        })(),
+      );
+    }
+    await Promise.all(workers);
+  }
+
+  async function uploadOne(w: WorkItem) {
+    const li = appendRow(w.name);
     try {
-      const buf = await file.arrayBuffer();
       const res = await fetch('/api/v1/activities', {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type':
-            source === 'fit'
+            w.source === 'fit'
               ? 'application/octet-stream'
-              : source === 'gpx'
+              : w.source === 'gpx'
                 ? 'application/gpx+xml'
                 : 'application/tcx+xml',
-          'X-Activity-Source': source,
+          'X-Activity-Source': w.source,
         },
-        body: buf,
+        body: w.bytes,
       });
+      if (res.status === 409) {
+        stats.dupe++;
+        renderRow(li, w.name, 'dupe', 'already in your library');
+        return;
+      }
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
         throw new Error(err.error ?? `HTTP ${res.status}`);
       }
       const body = (await res.json()) as { activityId: string };
-      li.innerHTML = `
-        <div style="padding: 12px 16px; display: flex; align-items: center; gap: 12px;">
-          <span class="chip chip-success">queued</span>
-          <span style="flex: 1;">${escape(file.name)}</span>
-          <a class="btn btn-secondary btn-sm" href="/activity/${escape(body.activityId)}">View</a>
-        </div>
-      `;
+      stats.ok++;
+      renderRow(li, w.name, 'ok', `queued · /activity/${body.activityId}`, body.activityId);
     } catch (err) {
-      li.innerHTML = `<div style="padding: 12px 16px; color: var(--danger);">${escape(file.name)} — failed: ${escape((err as Error).message)}</div>`;
+      stats.fail++;
+      renderRow(li, w.name, 'fail', (err as Error).message);
     }
+  }
+
+  // ---------------- archive expansion ----------------
+
+  async function expand(f: File): Promise<WorkItem[]> {
+    const lname = f.name.toLowerCase();
+    if (lname.endsWith('.zip')) {
+      try {
+        const JSZip = await loadJSZip();
+        const zip = await JSZip.loadAsync(await f.arrayBuffer());
+        const out: WorkItem[] = [];
+        const entries = Object.values(zip.files) as Array<{
+          name: string;
+          dir: boolean;
+          async: (t: 'arraybuffer') => Promise<ArrayBuffer>;
+        }>;
+        for (const entry of entries) {
+          if (entry.dir) continue;
+          const inner = await expandRaw(entry.name, await entry.async('arraybuffer'));
+          for (const w of inner) out.push(w);
+        }
+        return out;
+      } catch (err) {
+        console.error('zip parse failed', f.name, err);
+        return [];
+      }
+    }
+    return expandRaw(f.name, await f.arrayBuffer());
+  }
+
+  async function expandRaw(name: string, bytes: ArrayBuffer): Promise<WorkItem[]> {
+    const lname = name.toLowerCase();
+    if (lname.endsWith('.gz')) {
+      try {
+        const pako = await loadPako();
+        const decompressed = pako.ungzip(new Uint8Array(bytes));
+        return expandRaw(lname.replace(/\.gz$/, ''), decompressed.buffer.slice(decompressed.byteOffset, decompressed.byteOffset + decompressed.byteLength));
+      } catch (err) {
+        console.error('gunzip failed', name, err);
+        return [];
+      }
+    }
+    const ext = lname.split('.').pop() ?? '';
+    const source = SOURCE_BY_EXT[ext];
+    if (!source) return [];
+    return [{ name: name.split('/').pop() ?? name, bytes, source }];
+  }
+
+  // ---------------- DataTransfer expansion (folder drag) ----------------
+
+  async function collectFromItems(items: DataTransferItem[], fallback?: FileList | null): Promise<File[]> {
+    const out: File[] = [];
+    let usedEntry = false;
+    for (const it of items) {
+      const anyIt = it as DataTransferItem & { webkitGetAsEntry?: () => unknown };
+      const entry = anyIt.webkitGetAsEntry?.();
+      if (entry) {
+        usedEntry = true;
+        await walkEntry(entry as FsHandle, out);
+      }
+    }
+    if (!usedEntry && fallback) {
+      for (const f of Array.from(fallback)) out.push(f);
+    }
+    return out;
+  }
+
+  // Minimal subset of the FileSystemEntry interface used here.
+  interface FsHandle {
+    isFile?: boolean;
+    isDirectory?: boolean;
+    file?: (cb: (f: File) => void, err: (e: unknown) => void) => void;
+    createReader?: () => {
+      readEntries: (cb: (entries: FsHandle[]) => void, err: (e: unknown) => void) => void;
+    };
+  }
+
+  async function walkEntry(entry: FsHandle, out: File[]): Promise<void> {
+    if (entry.isFile) {
+      const file: File = await new Promise((resolve, reject) =>
+        entry.file!(resolve, reject),
+      );
+      out.push(file);
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader!();
+      // readEntries returns batches; loop until empty.
+      while (true) {
+        const batch: FsHandle[] = await new Promise((resolve, reject) =>
+          reader.readEntries(resolve, reject),
+        );
+        if (batch.length === 0) break;
+        for (const e of batch) await walkEntry(e, out);
+      }
+    }
+  }
+
+  // ---------------- lazy CDN deps ----------------
+
+  type JSZipMod = {
+    loadAsync: (data: ArrayBuffer) => Promise<{ files: Record<string, unknown> }>;
+  };
+  type PakoMod = { ungzip: (data: Uint8Array) => Uint8Array };
+
+  // Built at runtime so TS doesn't try to resolve the URL at compile time.
+  const dynImport = new Function('u', 'return import(u)') as (u: string) => Promise<unknown>;
+
+  let jszipPromise: Promise<JSZipMod> | null = null;
+  function loadJSZip(): Promise<JSZipMod> {
+    jszipPromise ??= dynImport('https://esm.sh/jszip@3.10.1').then(
+      (m) => (m as { default: JSZipMod }).default,
+    );
+    return jszipPromise;
+  }
+
+  let pakoPromise: Promise<PakoMod> | null = null;
+  function loadPako(): Promise<PakoMod> {
+    pakoPromise ??= dynImport('https://esm.sh/pako@2.1.0').then((m) => {
+      const mod = m as { default?: PakoMod } & PakoMod;
+      return mod.default ?? mod;
+    });
+    return pakoPromise;
+  }
+
+  // ---------------- UI rows ----------------
+
+  function appendRow(name: string): HTMLLIElement {
+    const li = document.createElement('li');
+    li.className = 'panel';
+    li.innerHTML = `<div style="padding: 8px 14px; display: flex; align-items: center; gap: 12px;"><span class="chip chip-muted">queued</span><span style="flex: 1; font-size: 13px;">${escape(name)}</span><span class="caption">…</span></div>`;
+    results.prepend(li);
+    return li;
+  }
+
+  function renderRow(
+    li: HTMLLIElement,
+    name: string,
+    state: 'ok' | 'dupe' | 'fail',
+    detail: string,
+    activityId?: string,
+  ) {
+    const chipClass =
+      state === 'ok' ? 'chip-success' : state === 'dupe' ? 'chip-warning' : 'chip-muted';
+    const action =
+      state === 'ok' && activityId
+        ? `<a class="btn btn-secondary btn-sm" href="/activity/${escape(activityId)}">View</a>`
+        : '';
+    const detailColor = state === 'fail' ? 'color: var(--danger);' : '';
+    li.innerHTML = `
+      <div style="padding: 8px 14px; display: flex; align-items: center; gap: 12px;">
+        <span class="chip ${chipClass}">${state}</span>
+        <span style="flex: 1; font-size: 13px;">${escape(name)}</span>
+        <span class="caption" style="${detailColor}">${escape(detail)}</span>
+        ${action}
+      </div>
+    `;
   }
 
   function escape(s: string) {
@@ -111,4 +437,30 @@ import Icon from '../components/Icon.astro';
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
   }
+
+  // ---------------- Strava 90d backfill (existing endpoint) ----------------
+
+  document.getElementById('strava-import')?.addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget as HTMLButtonElement;
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = 'Backfilling…';
+    try {
+      const r = await fetch('/api/v1/me/import/strava', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (r.ok) {
+        const body = (await r.json()) as { queued: number };
+        btn.textContent = `Queued ${body.queued}`;
+      } else {
+        btn.textContent = `Failed (${r.status})`;
+      }
+    } finally {
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = original ?? 'Backfill';
+      }, 4000);
+    }
+  });
 </script>
