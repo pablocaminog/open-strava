@@ -90,6 +90,12 @@ export async function persistActivity(env: Env, input: PersistInput): Promise<vo
   // Segment effort detection — bbox prefilter against the activity's
   // bbox via SQL, then DTW match in-process.
   await detectSegmentEfforts(env, job, activity);
+  await detectPersonalRecords(env, job, activity, metrics).catch((e) =>
+    console.error('PR detect fail', e),
+  );
+  await matchPlannedWorkout(env, job, activity, summary).catch((e) =>
+    console.error('plan match fail', e),
+  );
   await mirrorToArweave(env, job, summary).catch((e) => console.error('arweave fail', e));
   await mirrorToAtproto(env, job, activity, summary).catch((e) => console.error('atproto fail', e));
 
@@ -237,6 +243,153 @@ async function mirrorToAtproto(
   );
   await env.DB.prepare('UPDATE activities SET atproto_uri = ? WHERE id = ?')
     .bind(out.uri, job.activityId)
+    .run();
+}
+
+// Personal records: peak power durations + run/swim distance bests.
+const POWER_PR_KEYS: Array<{ duration: number; key: string }> = [
+  { duration: 5, key: 'power:5s' },
+  { duration: 60, key: 'power:60s' },
+  { duration: 300, key: 'power:300s' },
+  { duration: 1200, key: 'power:1200s' },
+  { duration: 3600, key: 'power:3600s' },
+];
+const DISTANCE_PR_TARGETS = [1000, 5000, 10_000, 21_097, 42_195];
+
+async function detectPersonalRecords(
+  env: Env,
+  job: IngestJob,
+  activity: ActivityRecord,
+  metrics: MetricKv[],
+): Promise<void> {
+  const sport = activity.session.sport;
+  const achievedAt = Math.floor(activity.session.startedAt.getTime() / 1000);
+  const candidates: { key: string; value: number; better: 'gt' | 'lt' }[] = [];
+
+  for (const { duration, key } of POWER_PR_KEYS) {
+    const m = metrics.find((x) => x.key === `power.peak.${duration}`);
+    if (m && Number.isFinite(m.value) && m.value > 0) {
+      candidates.push({ key, value: m.value, better: 'gt' });
+    }
+  }
+
+  if (sport === 'running' || sport === 'walking') {
+    const samples = activity.samples;
+    for (const targetM of DISTANCE_PR_TARGETS) {
+      const t = fastestDuration(samples, targetM);
+      if (t != null) candidates.push({ key: `distance:${targetM}m`, value: t, better: 'lt' });
+    }
+  }
+
+  for (const cand of candidates) {
+    const cur = await env.DB.prepare(
+      `SELECT value FROM personal_records WHERE athlete_id = ? AND sport = ? AND key = ?`,
+    )
+      .bind(job.athleteId, sport, cand.key)
+      .first<{ value: number }>();
+    const beats = !cur || (cand.better === 'gt' ? cand.value > cur.value : cand.value < cur.value);
+    if (!beats) continue;
+    await env.DB.prepare(
+      `INSERT INTO personal_records (athlete_id, sport, key, value, activity_id, achieved_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT (athlete_id, sport, key) DO UPDATE
+         SET value = excluded.value, activity_id = excluded.activity_id, achieved_at = excluded.achieved_at`,
+    )
+      .bind(job.athleteId, sport, cand.key, cand.value, job.activityId, achievedAt)
+      .run();
+  }
+}
+
+function fastestDuration(samples: ActivityRecord['samples'], targetMeters: number): number | null {
+  // Sliding window: find min Δt such that cumulative distance ≥ targetMeters.
+  const dists: number[] = [];
+  const times: number[] = [];
+  let cum = 0;
+  let prev: { lat?: number; lng?: number } | null = null;
+  for (const s of samples) {
+    if (typeof s.lat === 'number' && typeof s.lng === 'number') {
+      if (prev && typeof prev.lat === 'number' && typeof prev.lng === 'number') {
+        cum += haversine(prev.lat, prev.lng, s.lat, s.lng);
+      }
+      prev = { lat: s.lat, lng: s.lng };
+    }
+    dists.push(cum);
+    times.push(s.t);
+  }
+  if (dists.length < 2 || cum < targetMeters) return null;
+
+  let best = Infinity;
+  let i = 0;
+  for (let j = 0; j < dists.length; j++) {
+    while (i < j && dists[j]! - dists[i]! >= targetMeters) {
+      const dt = times[j]! - times[i]!;
+      if (dt > 0 && dt < best) best = dt;
+      i++;
+    }
+  }
+  return Number.isFinite(best) ? best : null;
+}
+
+function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6_371_000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+interface PlannedRow {
+  id: string;
+  workout_id: string | null;
+  steps_json: string | null;
+  estimated_tss: number | null;
+  estimated_duration_sec: number | null;
+}
+
+async function matchPlannedWorkout(
+  env: Env,
+  job: IngestJob,
+  activity: ActivityRecord,
+  summary: ActivitySummary,
+): Promise<void> {
+  const date = new Date(activity.session.startedAt);
+  const yyyy = date.getUTCFullYear();
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(date.getUTCDate()).padStart(2, '0');
+  const dateStr = `${yyyy}-${mm}-${dd}`;
+  const planned = await env.DB.prepare(
+    `SELECT pw.id AS id, pw.workout_id AS workout_id,
+            w.steps_json AS steps_json, w.estimated_tss AS estimated_tss,
+            w.estimated_duration_sec AS estimated_duration_sec
+       FROM planned_workouts pw
+       LEFT JOIN workouts w ON w.id = pw.workout_id
+      WHERE pw.athlete_id = ? AND pw.scheduled_date = ? AND pw.completed_activity_id IS NULL
+      LIMIT 1`,
+  )
+    .bind(job.athleteId, dateStr)
+    .first<PlannedRow>();
+  if (!planned) return;
+
+  let compliance: number | null = null;
+  if (planned.estimated_duration_sec && summary.totalSeconds > 0) {
+    const durRatio = Math.min(
+      summary.totalSeconds / planned.estimated_duration_sec,
+      planned.estimated_duration_sec / summary.totalSeconds,
+    );
+    let tssMatch = 1;
+    if (planned.estimated_tss && typeof summary.tss === 'number' && summary.tss > 0) {
+      tssMatch = Math.min(summary.tss / planned.estimated_tss, planned.estimated_tss / summary.tss);
+    }
+    compliance = Math.max(0, Math.min(1, 0.5 * durRatio + 0.5 * tssMatch));
+  }
+
+  await env.DB.prepare(
+    `UPDATE planned_workouts SET completed_activity_id = ?, compliance_score = ? WHERE id = ?`,
+  )
+    .bind(job.activityId, compliance, planned.id)
     .run();
 }
 

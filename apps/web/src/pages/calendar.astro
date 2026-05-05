@@ -13,6 +13,37 @@ import Base from '../layouts/Base.astro';
 
     <div id="calendar-grid" class="overflow-x-auto"></div>
     <div id="day-detail" class="text-sm"></div>
+
+    <section class="space-y-3">
+      <h2 class="text-lg font-semibold">Plan upcoming</h2>
+      <form id="schedule-form" class="grid grid-cols-1 gap-2 sm:grid-cols-4">
+        <label class="text-sm">Date
+          <input
+            type="date"
+            name="scheduledDate"
+            required
+            class="mt-1 w-full rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+          />
+        </label>
+        <label class="text-sm">Workout
+          <select
+            id="schedule-workout"
+            name="workoutId"
+            class="mt-1 w-full rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+          ></select>
+        </label>
+        <label class="text-sm sm:col-span-2">Notes
+          <input
+            name="notes"
+            class="mt-1 w-full rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
+          />
+        </label>
+        <button class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white sm:col-span-1">
+          Schedule
+        </button>
+      </form>
+      <ul id="planned-list" class="space-y-2 text-sm"></ul>
+    </section>
   </section>
 </Base>
 
@@ -51,6 +82,104 @@ import Base from '../layouts/Base.astro';
 
     grid.innerHTML = '';
     grid.appendChild(buildHeatmap(days));
+
+    await loadWorkoutOptions();
+    await loadPlanned();
+  }
+
+  async function loadWorkoutOptions() {
+    const sel = document.getElementById('schedule-workout') as HTMLSelectElement;
+    const r = await fetch('/api/v1/workouts', { credentials: 'include' });
+    if (!r.ok) return;
+    const body = (await r.json()) as { items: { id: string; name: string }[] };
+    sel.innerHTML = '<option value="">— note only —</option>';
+    for (const w of body.items) {
+      const opt = document.createElement('option');
+      opt.value = w.id;
+      opt.textContent = w.name;
+      sel.appendChild(opt);
+    }
+  }
+
+  async function loadPlanned() {
+    const list = document.getElementById('planned-list')!;
+    const from = isoDaysAgo(28);
+    const to = isoDaysAhead(56);
+    const r = await fetch(`/api/v1/me/calendar?from=${from}&to=${to}`, { credentials: 'include' });
+    if (!r.ok) return;
+    const body = (await r.json()) as {
+      items: {
+        id: string;
+        scheduledDate: string;
+        notes: string | null;
+        workoutName: string | null;
+        sport: string | null;
+        estimatedTss: number | null;
+        completedActivityId: string | null;
+        complianceScore: number | null;
+      }[];
+    };
+    list.innerHTML = '';
+    for (const p of body.items) {
+      const li = document.createElement('li');
+      li.className = 'rounded border border-neutral-200 p-2 dark:border-neutral-800';
+      const tag = p.completedActivityId
+        ? `<span class="rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100">done · ${
+            p.complianceScore != null ? Math.round(p.complianceScore * 100) + '%' : '—'
+          }</span>`
+        : '<span class="rounded bg-neutral-100 px-2 py-0.5 text-xs dark:bg-neutral-800">planned</span>';
+      const wname = p.workoutName ? escape(p.workoutName) : '<em>note</em>';
+      li.innerHTML = `
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <p><strong>${p.scheduledDate}</strong> · ${wname} ${tag}</p>
+            ${p.notes ? `<p class="text-xs text-neutral-500">${escape(p.notes)}</p>` : ''}
+          </div>
+          <button data-del="${p.id}" class="text-xs text-red-600 hover:underline">remove</button>
+        </div>
+      `;
+      list.appendChild(li);
+    }
+  }
+
+  document.getElementById('schedule-form')!.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target as HTMLFormElement);
+    const payload = {
+      scheduledDate: String(fd.get('scheduledDate') ?? ''),
+      workoutId: String(fd.get('workoutId') ?? '') || null,
+      notes: String(fd.get('notes') ?? '') || null,
+    };
+    const r = await fetch('/api/v1/me/calendar', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (r.ok) {
+      (ev.target as HTMLFormElement).reset();
+      await loadPlanned();
+    }
+  });
+
+  document.getElementById('planned-list')!.addEventListener('click', async (ev) => {
+    const t = ev.target as HTMLElement;
+    const id = t.dataset.del;
+    if (!id) return;
+    const r = await fetch(`/api/v1/me/calendar/${id}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    });
+    if (r.ok) await loadPlanned();
+  });
+
+  function isoDaysAhead(n: number): string {
+    const d = new Date(Date.now() + n * 86_400_000);
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+  }
+
+  function escape(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
   function buildHeatmap(days: Day[]): SVGSVGElement {

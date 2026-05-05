@@ -85,6 +85,12 @@ export class FakeD1 implements D1Database {
   eventInvites: Row[] = [];
   apiKeys: Row[] = [];
   pmcDaily: Map<string, Row> = new Map();
+  challenges: Row[] = [];
+  challengeParticipants: Row[] = [];
+  workouts: Row[] = [];
+  plannedWorkouts: Row[] = [];
+  personalRecords: Row[] = [];
+  coachAthletes: Row[] = [];
 
   prepare(sql: string): D1PreparedStatement {
     return new FakeStmt(this, sql);
@@ -704,6 +710,64 @@ export class FakeD1 implements D1Database {
       }
       out.sort((a, b) => String(a.date).localeCompare(String(b.date)));
       return out;
+    }
+    if (trimmed.startsWith('SELECT value FROM personal_records')) {
+      const [athleteId, sport, key] = params;
+      const row = this.personalRecords.find(
+        (r) => r.athlete_id === athleteId && r.sport === sport && r.key === key,
+      );
+      return row ? [{ value: row.value }] : [];
+    }
+    if (trimmed.startsWith('INSERT INTO personal_records')) {
+      const [athlete_id, sport, key, value, activity_id, achieved_at] = params;
+      const idx = this.personalRecords.findIndex(
+        (r) => r.athlete_id === athlete_id && r.sport === sport && r.key === key,
+      );
+      const rec = { athlete_id, sport, key, value, activity_id, achieved_at };
+      if (idx >= 0) this.personalRecords[idx] = rec;
+      else this.personalRecords.push(rec);
+      return [];
+    }
+    if (trimmed.startsWith('SELECT sport, key, value, activity_id')) {
+      const id = params[0];
+      return this.personalRecords
+        .filter((r) => r.athlete_id === id)
+        .map((r) => ({
+          sport: r.sport,
+          key: r.key,
+          value: r.value,
+          activityId: r.activity_id,
+          achievedAt: r.achieved_at,
+        }));
+    }
+    if (trimmed.startsWith('SELECT pw.id AS id, pw.workout_id')) {
+      const [athleteId, dateStr] = params;
+      const pw = this.plannedWorkouts.find(
+        (r) =>
+          r.athlete_id === athleteId &&
+          r.scheduled_date === dateStr &&
+          r.completed_activity_id == null,
+      );
+      if (!pw) return [];
+      const w = this.workouts.find((x) => x.id === pw.workout_id);
+      return [
+        {
+          id: pw.id,
+          workout_id: pw.workout_id ?? null,
+          steps_json: w?.steps_json ?? null,
+          estimated_tss: w?.estimated_tss ?? null,
+          estimated_duration_sec: w?.estimated_duration_sec ?? null,
+        },
+      ];
+    }
+    if (trimmed.startsWith('UPDATE planned_workouts SET completed_activity_id')) {
+      const [activityId, score, id] = params;
+      const pw = this.plannedWorkouts.find((r) => r.id === id);
+      if (pw) {
+        pw.completed_activity_id = activityId;
+        pw.compliance_score = score;
+      }
+      return [];
     }
     if (trimmed.startsWith('INSERT INTO pmc_daily')) {
       const [athlete_id, date, tss] = params as [string, string, number];

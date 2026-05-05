@@ -28,11 +28,13 @@ function open(): DatabaseSyncT {
 
 const sql0002Path = join(__dirname, '..', '0002_api_keys.sql');
 const sql0003Path = join(__dirname, '..', '0003_decentralization.sql');
+const sql0004Path = join(__dirname, '..', '0004_training.sql');
 
 function applyAll(db: DatabaseSyncT) {
   db.exec(readFileSync(sqlPath, 'utf-8'));
   db.exec(readFileSync(sql0002Path, 'utf-8'));
   db.exec(readFileSync(sql0003Path, 'utf-8'));
+  db.exec(readFileSync(sql0004Path, 'utf-8'));
 }
 
 describe('migrations', () => {
@@ -43,6 +45,25 @@ describe('migrations', () => {
       .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
       .all() as { name: string }[];
     expect(rows.map((r) => r.name)).toContain('api_keys');
+  });
+
+  it('0004 creates training tables', () => {
+    const db = open();
+    applyAll(db);
+    const rows = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+      .all() as { name: string }[];
+    const tables = new Set(rows.map((r) => r.name));
+    for (const t of [
+      'challenges',
+      'challenge_participants',
+      'workouts',
+      'planned_workouts',
+      'personal_records',
+      'coach_athletes',
+    ]) {
+      expect(tables.has(t), `expected table ${t}`).toBe(true);
+    }
   });
 
   it('0003 adds decentralization columns', () => {

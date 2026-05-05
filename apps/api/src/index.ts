@@ -17,6 +17,8 @@ import { feedRoutes } from './routes/feed.js';
 import { segmentRoutes } from './routes/segments.js';
 import { clubRoutes } from './routes/clubs.js';
 import { eventRoutes } from './routes/events.js';
+import { challengeRoutes } from './routes/challenges.js';
+import { trainingRoutes } from './routes/training.js';
 import { exportRoutes } from './routes/exports.js';
 import { settingsRoutes } from './routes/settings.js';
 import { mcpRoutes } from './routes/mcp.js';
@@ -51,6 +53,8 @@ export function buildApp(): Hono<{ Bindings: Env }> {
   app.route('/api/v1', segmentRoutes);
   app.route('/api/v1', clubRoutes);
   app.route('/api/v1', eventRoutes);
+  app.route('/api/v1', challengeRoutes);
+  app.route('/api/v1', trainingRoutes);
   app.route('/api/v1', exportRoutes);
   app.route('/api/v1', settingsRoutes);
   app.route('/api/v1', stravaRoutes);

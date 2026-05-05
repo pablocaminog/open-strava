@@ -38,7 +38,7 @@ This project is a thin layer of glue. The hard parts are someone else's work, an
 - **[uPlot](https://github.com/leeoniya/uPlot)** — fast time-series charts.
 - **[SimpleWebAuthn](https://simplewebauthn.dev/)** — passkey auth.
 - **[fast-xml-parser](https://github.com/NaturalIntelligence/fast-xml-parser)** — TCX/GPX parsing.
-- **[Andrew Coggan](https://en.wikipedia.org/wiki/Power_meter_(cycling))** for popularizing TSS / NP / IF.
+- **[Andrew Coggan](<https://en.wikipedia.org/wiki/Power_meter_(cycling)>)** for popularizing TSS / NP / IF.
 - **[Alberto Minetti](https://journals.physiology.org/doi/full/10.1152/japplphysiol.01177.2001)** for the GAP energy-cost model.
 - **[Tim Banister](https://www.trainingpeaks.com/blog/the-science-of-the-performance-manager/)** for the impulse-response Performance Manager Chart.
 - **[Strava](https://www.strava.com/)**, **[TrainingPeaks](https://www.trainingpeaks.com/)**, **[Intervals.icu](https://intervals.icu/)** — for proving demand exists. Pacelore is not affiliated with any of them.
@@ -47,19 +47,19 @@ If you find a missing attribution, please open an issue.
 
 ## Stack
 
-| Layer          | Tech                                |
-| -------------- | ----------------------------------- |
-| Edge compute   | Cloudflare Workers (TypeScript)     |
-| Web            | Astro 5 on Cloudflare Pages         |
-| Relational     | Cloudflare D1                       |
-| Object storage | Cloudflare R2                       |
-| Hot KV         | Cloudflare KV                       |
-| Queues         | Cloudflare Queues                   |
-| Real-time      | Durable Objects (planned)           |
-| Search         | Vectorize + D1 FTS (planned)        |
-| Maps           | MapLibre GL + OpenFreeMap           |
-| Charts         | uPlot                               |
-| Auth           | WebAuthn passkeys + KV sessions     |
+| Layer          | Tech                            |
+| -------------- | ------------------------------- |
+| Edge compute   | Cloudflare Workers (TypeScript) |
+| Web            | Astro 5 on Cloudflare Pages     |
+| Relational     | Cloudflare D1                   |
+| Object storage | Cloudflare R2                   |
+| Hot KV         | Cloudflare KV                   |
+| Queues         | Cloudflare Queues               |
+| Real-time      | Durable Objects (planned)       |
+| Search         | Vectorize + D1 FTS (planned)    |
+| Maps           | MapLibre GL + OpenFreeMap       |
+| Charts         | uPlot                           |
+| Auth           | WebAuthn passkeys + KV sessions |
 
 ## Repo layout
 
