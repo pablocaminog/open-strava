@@ -1,0 +1,48 @@
+---
+import Base from './Base.astro';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+const { title, description } = Astro.props;
+---
+
+<Base title={title} description={description}>
+  <div class="marketing-shell">
+    <header class="marketing-nav">
+      <div class="marketing-nav-inner">
+        <a href="/" class="brand" aria-label="pacelore home">
+          <img src="/logo-wordmark.svg" alt="pacelore" style="height: 26px; color: var(--fg);" />
+        </a>
+        <span class="marketing-nav-spacer"></span>
+        <nav>
+          <a href="https://github.com/pablocaminog/pacelore">Source</a>
+          <a href="/feed">Feed</a>
+          <a href="/login">Sign in</a>
+        </nav>
+        <a class="btn btn-primary btn-sm" href="/register">Get started</a>
+      </div>
+    </header>
+
+    <main>
+      <slot />
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        <span>PolyForm Noncommercial 1.0.0</span>
+        <span>·</span>
+        <a href="https://github.com/pablocaminog/pacelore">Source on GitHub</a>
+        <span>·</span>
+        <a href="/feed">Feed</a>
+        <span>·</span>
+        <a href="/login">Sign in</a>
+        <span class="row-end" style="font-family: var(--font-mono); font-size: 12px;">
+          <span class="pulse-dot" style="display:inline-block; vertical-align: middle; margin-right: 8px;"></span>
+          edge · cf workers
+        </span>
+      </div>
+    </footer>
+  </div>
+</Base>

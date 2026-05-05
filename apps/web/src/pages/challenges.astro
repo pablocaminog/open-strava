@@ -1,93 +1,73 @@
 ---
-import Base from '../layouts/Base.astro';
+import Shell from '../layouts/Shell.astro';
+import Icon from '../components/Icon.astro';
 ---
 
-<Base title="Challenges · pacelore">
-  <section class="space-y-6">
-    <h1 class="text-2xl font-bold">Challenges</h1>
-    <p class="text-sm text-neutral-600 dark:text-neutral-400">
-      Set a goal — distance, climbing, time, or TSS — over a date range. Public challenges anyone
-      can join.
-    </p>
+<Shell title="Challenges" active="challenges">
+  <div class="stack" style="gap: 20px;">
+    <header>
+      <h1 class="h1" style="font-size: 28px;">Challenges</h1>
+      <p class="muted body-sm" style="margin-top: 4px;">
+        Set a goal — distance, climbing, time, or TSS — over a date range. Auto-progresses as
+        activities ingest.
+      </p>
+    </header>
 
-    <details class="rounded border border-neutral-200 p-3 dark:border-neutral-800">
-      <summary class="cursor-pointer font-medium">Create a challenge</summary>
-      <form id="new-challenge" class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <label class="text-sm sm:col-span-2">Name
-          <input
-            name="name"
-            required
-            class="mt-1 w-full rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-          />
-        </label>
-        <label class="text-sm sm:col-span-2">Description
-          <textarea
-            name="description"
-            class="mt-1 w-full rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-          ></textarea>
-        </label>
-        <label class="text-sm">Metric
-          <select
-            name="metric"
-            class="mt-1 w-full rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-          >
+    <details class="panel">
+      <summary style="cursor: pointer; padding: 14px 20px; display: flex; align-items: center; gap: 8px; font-weight: 500;">
+        <Icon name="plus" size={16} /> Create a challenge
+      </summary>
+      <form id="new-challenge" class="panel-body grid-tiles grid-cols-2" style="gap: 12px;">
+        <div class="field" style="grid-column: span 2;">
+          <label class="field-label">Name</label>
+          <input class="input" name="name" required />
+        </div>
+        <div class="field" style="grid-column: span 2;">
+          <label class="field-label">Description</label>
+          <textarea class="textarea" name="description"></textarea>
+        </div>
+        <div class="field">
+          <label class="field-label">Metric</label>
+          <select class="select" name="metric">
             <option value="distance_m">Distance (m)</option>
             <option value="ascent_m">Ascent (m)</option>
             <option value="total_seconds">Time (s)</option>
             <option value="tss">TSS</option>
           </select>
-        </label>
-        <label class="text-sm">Goal
-          <input
-            type="number"
-            name="goal"
-            required
-            min="1"
-            class="mt-1 w-full rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-          />
-        </label>
-        <label class="text-sm">Sport (optional)
-          <input
-            name="sport"
-            placeholder="e.g. cycling"
-            class="mt-1 w-full rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-          />
-        </label>
-        <label class="text-sm">Visibility
-          <select
-            name="visibility"
-            class="mt-1 w-full rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-          >
+        </div>
+        <div class="field">
+          <label class="field-label">Goal</label>
+          <input class="input mono" type="number" name="goal" required min="1" />
+        </div>
+        <div class="field">
+          <label class="field-label">Sport (optional)</label>
+          <input class="input" name="sport" placeholder="e.g. cycling" />
+        </div>
+        <div class="field">
+          <label class="field-label">Visibility</label>
+          <select class="select" name="visibility">
             <option value="public">Public</option>
             <option value="private">Private</option>
           </select>
-        </label>
-        <label class="text-sm">Starts
-          <input
-            type="date"
-            name="startsAt"
-            required
-            class="mt-1 w-full rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-          />
-        </label>
-        <label class="text-sm">Ends
-          <input
-            type="date"
-            name="endsAt"
-            required
-            class="mt-1 w-full rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-900"
-          />
-        </label>
-        <button class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white sm:col-span-2"
-          >Create</button
-        >
+        </div>
+        <div class="field">
+          <label class="field-label">Starts</label>
+          <input class="input mono" type="date" name="startsAt" required />
+        </div>
+        <div class="field">
+          <label class="field-label">Ends</label>
+          <input class="input mono" type="date" name="endsAt" required />
+        </div>
+        <button class="btn btn-primary" style="grid-column: span 2; justify-self: flex-start;" type="submit">
+          Create challenge
+        </button>
       </form>
     </details>
 
-    <ul id="challenge-list" class="space-y-2"></ul>
+    <ul id="challenge-list" class="stack" style="list-style: none; margin: 0; padding: 0; gap: 10px;"></ul>
     <div id="leaderboard"></div>
-  </section>
-</Base>
+  </div>
+</Shell>
 
 <script>
   const list = document.getElementById('challenge-list')!;
@@ -99,8 +79,7 @@ import Base from '../layouts/Base.astro';
   async function load() {
     const r = await fetch('/api/v1/challenges', { credentials: 'include' });
     if (!r.ok) {
-      list.innerHTML =
-        '<li class="text-sm text-neutral-500">Please <a class="text-accent hover:underline" href="/login">log in</a>.</li>';
+      list.innerHTML = `<li class="empty">Sign in to see challenges.</li>`;
       return;
     }
     const body = (await r.json()) as {
@@ -115,22 +94,24 @@ import Base from '../layouts/Base.astro';
       }[];
     };
     list.innerHTML = '';
+    if (body.items.length === 0) {
+      list.innerHTML = `<li class="empty">No challenges yet — create one above.</li>`;
+      return;
+    }
     for (const ch of body.items) {
       const li = document.createElement('li');
-      li.className = 'rounded border border-neutral-200 p-3 dark:border-neutral-800';
+      li.className = 'panel';
       li.innerHTML = `
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="font-medium">${escape(ch.name)}</p>
-            <p class="text-xs text-neutral-500">
-              ${ch.metric} ≥ ${ch.goal}${ch.sport ? ' · ' + ch.sport : ''} ·
+        <div style="padding: 14px 20px; display: flex; align-items: center; gap: 12px;">
+          <div style="flex: 1;">
+            <strong style="font-size: 15px;">${escape(ch.name)}</strong>
+            <p class="caption" style="margin-top: 2px; font-family: var(--font-mono);">
+              ${escape(ch.metric)} ≥ ${ch.goal}${ch.sport ? ' · ' + escape(ch.sport) : ''} ·
               ${fmt(ch.startsAt)} → ${fmt(ch.endsAt)}
             </p>
           </div>
-          <div class="flex gap-2 text-xs">
-            <button data-join="${ch.id}" class="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700">Join</button>
-            <button data-board="${ch.id}" class="rounded border border-neutral-300 px-2 py-1 dark:border-neutral-700">Board</button>
-          </div>
+          <button data-join="${escape(ch.id)}" class="btn btn-secondary btn-sm">Join</button>
+          <button data-board="${escape(ch.id)}" class="btn btn-secondary btn-sm">Board</button>
         </div>
       `;
       list.appendChild(li);
@@ -153,12 +134,25 @@ import Base from '../layouts/Base.astro';
       const body = (await r.json()) as {
         items: { athleteId: string; handle: string; total: number }[];
       };
-      lb.innerHTML = `<h2 class="mt-4 text-lg font-semibold">Leaderboard</h2><ol class="mt-2 space-y-1 text-sm">${body.items
-        .map(
-          (row, i) =>
-            `<li><span class="text-xs text-neutral-500">#${i + 1}</span> <strong>${escape(row.handle ?? '?')}</strong> · ${row.total.toFixed(1)}</li>`,
-        )
-        .join('')}</ol>`;
+      lb.innerHTML = `
+        <div class="panel" style="margin-top: 8px;">
+          <div class="panel-header"><h3 class="h3" style="font-size: 16px;">Leaderboard</h3></div>
+          <table class="lb">
+            <thead><tr><th style="width: 60px;">Rank</th><th>Athlete</th><th>Total</th></tr></thead>
+            <tbody>
+              ${body.items
+                .map(
+                  (row, i) => `
+                <tr>
+                  <td class="num">${i + 1}</td>
+                  <td>${escape(row.handle ?? '?')}</td>
+                  <td class="num">${row.total.toFixed(1)}</td>
+                </tr>`,
+                )
+                .join('')}
+            </tbody>
+          </table>
+        </div>`;
     }
   });
 
@@ -187,10 +181,14 @@ import Base from '../layouts/Base.astro';
     }
   });
 
-  function fmt(ts: number): string {
+  function fmt(ts: number) {
     return new Date(ts * 1000).toISOString().slice(0, 10);
   }
-  function escape(s: string): string {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  function escape(s: string) {
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 </script>

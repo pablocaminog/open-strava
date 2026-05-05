@@ -2,11 +2,16 @@
 import Base from '../layouts/Base.astro';
 ---
 
-<Base title="Logout · pacelore">
-  <section class="mx-auto max-w-md space-y-4">
-    <h1 class="text-2xl font-bold">Signing you out…</h1>
-    <p id="logout-status" class="text-sm text-neutral-600 dark:text-neutral-400"></p>
-  </section>
+<Base title="Sign out">
+  <div class="auth-shell">
+    <div class="auth-card" style="text-align: center;">
+      <a href="/" aria-label="pacelore home" style="align-self: center;">
+        <img src="/logo-wordmark.svg" alt="pacelore" style="height: 26px; color: var(--fg);" />
+      </a>
+      <h2 class="h2" style="font-size: 22px;">Signing you out…</h2>
+      <p id="logout-status" class="muted body-sm"></p>
+    </div>
+  </div>
 </Base>
 
 <script>
@@ -17,6 +22,6 @@ import Base from '../layouts/Base.astro';
       setTimeout(() => (window.location.href = '/'), 500);
     })
     .catch((err) => {
-      status.textContent = `Error: ${err}`;
+      status.textContent = `Couldn't sign out: ${err}`;
     });
 </script>

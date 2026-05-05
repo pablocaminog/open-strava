@@ -1,22 +1,65 @@
 ---
-import Base from '../layouts/Base.astro';
+import Shell from '../layouts/Shell.astro';
 ---
 
-<Base title="Feed · pacelore">
-  <section class="space-y-6">
-    <header class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold">Feed</h1>
-      <a href="/upload" class="text-sm text-accent hover:underline">+ Upload activity</a>
-    </header>
-    <p id="feed-subtitle" class="text-sm text-neutral-600 dark:text-neutral-400">Loading…</p>
-    <ul id="feed-list" class="space-y-3"></ul>
-    <button
-      id="feed-more"
-      class="hidden rounded border border-neutral-300 px-4 py-2 text-sm hover:border-accent dark:border-neutral-700"
-      >Load more</button
-    >
-  </section>
-</Base>
+<Shell title="Feed" active="feed">
+  <div style="display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px;">
+    <section>
+      <header class="row" style="margin-bottom: 16px;">
+        <h1 class="h1" style="font-size: 28px;">Feed</h1>
+        <div class="segmented row-end">
+          <button class="on" type="button" data-feed-tab="following">Following</button>
+          <button type="button" data-feed-tab="clubs">Clubs</button>
+          <button type="button" data-feed-tab="discover">Discover</button>
+        </div>
+      </header>
+      <p id="feed-subtitle" class="muted body-sm" style="margin-bottom: 16px;">Loading…</p>
+      <ul id="feed-list" class="stack" style="list-style: none; padding: 0; margin: 0;"></ul>
+      <div style="display: flex; justify-content: center; padding: 16px;">
+        <button id="feed-more" class="btn btn-secondary btn-sm" hidden>Load more</button>
+      </div>
+    </section>
+
+    <aside class="stack" style="gap: 16px;">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="metric-label">This week</span>
+        </div>
+        <div class="panel-body grid-tiles grid-cols-2">
+          <div class="tile">
+            <span class="label">distance</span>
+            <span class="v">184.2<span class="u"> km</span></span>
+          </div>
+          <div class="tile">
+            <span class="label">time</span>
+            <span class="v">8:42<span class="u">:11</span></span>
+          </div>
+          <div class="tile">
+            <span class="label">tss</span>
+            <span class="v">612</span>
+            <span class="delta">+38 vs last</span>
+          </div>
+          <div class="tile">
+            <span class="label">ctl</span>
+            <span class="v">74.0</span>
+            <span class="delta">+2.1</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <span class="metric-label">Quick actions</span>
+        </div>
+        <div class="panel-body stack" style="gap: 10px;">
+          <a class="btn btn-primary btn-sm" href="/upload">Upload an activity</a>
+          <a class="btn btn-secondary btn-sm" href="/dashboard">Open PMC dashboard</a>
+          <a class="btn btn-secondary btn-sm" href="/segments">Find a segment</a>
+        </div>
+      </div>
+    </aside>
+  </div>
+</Shell>
 
 <script>
   type Item = {
@@ -38,15 +81,17 @@ import Base from '../layouts/Base.astro';
   const moreBtn = document.getElementById('feed-more') as HTMLButtonElement;
   let cursor: string | null = null;
 
-  load().catch((err) => (subtitle.textContent = `Failed: ${(err as Error).message}`));
-  moreBtn.addEventListener('click', () => load().catch((err) => (subtitle.textContent = `Failed: ${err}`)));
+  load().catch((err) => (subtitle.textContent = `Couldn't load feed: ${(err as Error).message}`));
+  moreBtn.addEventListener('click', () =>
+    load().catch((err) => (subtitle.textContent = `Couldn't load feed: ${err}`)),
+  );
 
   async function load() {
     const url = cursor ? `/api/v1/feed?cursor=${cursor}` : '/api/v1/feed';
     const res = await fetch(url, { credentials: 'include' });
     if (!res.ok) {
       if (res.status === 401) {
-        subtitle.innerHTML = `Please <a class="text-accent hover:underline" href="/login">log in</a>.`;
+        subtitle.innerHTML = `Sign in to see your feed — <a href="/login" style="color: var(--fg); text-decoration: underline;">go to sign in</a>.`;
         return;
       }
       throw new Error(`HTTP ${res.status}`);
@@ -54,37 +99,74 @@ import Base from '../layouts/Base.astro';
     const body = (await res.json()) as { items: Item[]; nextCursor: string | null };
     if (cursor === null) {
       subtitle.textContent =
-        body.items.length === 0 ? 'No activities yet.' : `${body.items.length} most recent`;
+        body.items.length === 0
+          ? 'No activities yet. Upload one to get started.'
+          : `${body.items.length} most recent`;
     }
     for (const it of body.items) list.appendChild(renderItem(it));
     cursor = body.nextCursor;
-    moreBtn.classList.toggle('hidden', !cursor);
+    moreBtn.hidden = !cursor;
   }
 
   function renderItem(it: Item): HTMLLIElement {
     const li = document.createElement('li');
-    li.className = 'rounded border border-neutral-200 p-4 dark:border-neutral-800';
-    const date = new Date(it.startedAt * 1000).toLocaleString();
-    const dist = it.distanceM ? `${(it.distanceM / 1000).toFixed(2)} km` : '';
+    li.className = 'activity';
+
+    const date = new Date(it.startedAt * 1000);
+    const when = date.toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const dist = it.distanceM != null ? `${(it.distanceM / 1000).toFixed(1)} km` : '—';
     const dur = formatDuration(it.totalSeconds);
-    const np = it.np != null ? ` · NP ${Math.round(it.np)} W` : '';
-    const tss = it.tss != null ? ` · TSS ${it.tss.toFixed(1)}` : '';
+    const tss = it.tss != null ? it.tss.toFixed(0) : '—';
+    const fourthLabel = it.np != null ? 'np' : 'pace';
+    const fourth = it.np != null ? `${Math.round(it.np)} W` : '—';
+
+    const display = it.displayName ?? it.handle;
+    const initials = display
+      .split(/[\s_-]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((s) => s[0]?.toUpperCase() ?? '')
+      .join('') || display.slice(0, 2).toUpperCase();
+    const color = ((hash(it.athleteId) % 5) + 1) as 1 | 2 | 3 | 4 | 5;
+
     li.innerHTML = `
-      <div class="flex items-baseline justify-between">
-        <a href="/athletes/${escape(it.handle)}" class="font-semibold hover:text-accent">${escape(
-          it.displayName ?? it.handle,
-        )}</a>
-        <span class="text-xs text-neutral-500">${escape(date)}</span>
-      </div>
-      <a href="/activity/${escape(it.id)}" class="mt-1 block hover:text-accent">
-        <strong>${escape(it.name ?? it.sport)}</strong>
-        <span class="ml-2 text-sm text-neutral-600 dark:text-neutral-400">${escape(
-          it.sport,
-        )} · ${escape(dur)}${dist ? ` · ${escape(dist)}` : ''}${escape(np)}${escape(tss)}</span>
+      <a class="activity-top" href="/activity/${escape(it.id)}" style="text-decoration: none; color: inherit;">
+        <span class="avatar" data-color="${color}"><span>${escape(initials)}</span></span>
+        <span class="activity-who">
+          <span class="n">${escape(display)}</span>
+          <span class="m">${escape(when)}</span>
+        </span>
+        <span class="sport-tag">${escape(it.sport)}</span>
       </a>
-      <div class="mt-2 flex gap-3 text-sm">
-        <button data-id="${escape(it.id)}" class="kudos-btn text-neutral-600 hover:text-accent">👍 Kudos</button>
-        <a href="/activity/${escape(it.id)}#comments" class="text-neutral-600 hover:text-accent">💬 Comments</a>
+      <div class="activity-body">
+        <a href="/activity/${escape(it.id)}" style="text-decoration: none; color: inherit;">
+          <h3 class="activity-title">${escape(it.name ?? sentenceCase(it.sport))}</h3>
+        </a>
+        <p class="activity-sub">${escape(dur)} · ${escape(dist)}${it.tss != null ? ` · TSS ${tss}` : ''}</p>
+      </div>
+      <div class="activity-stats">
+        <div class="activity-stat"><span class="metric-label">distance</span><span class="v">${escape(dist)}</span></div>
+        <div class="activity-stat"><span class="metric-label">time</span><span class="v">${escape(dur)}</span></div>
+        <div class="activity-stat"><span class="metric-label">tss</span><span class="v">${escape(tss)}</span></div>
+        <div class="activity-stat"><span class="metric-label">${fourthLabel}</span><span class="v">${escape(fourth)}</span></div>
+      </div>
+      <div class="activity-actions">
+        <button type="button" class="activity-action kudos-btn" data-id="${escape(it.id)}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Kudos
+        </button>
+        <a class="activity-action" href="/activity/${escape(it.id)}#comments">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+          Comment
+        </a>
+        <a class="activity-action" href="/activity/${escape(it.id)}" style="margin-left: auto;">Open
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </a>
       </div>
     `;
     li.querySelector('.kudos-btn')!.addEventListener('click', async (ev) => {
@@ -96,7 +178,10 @@ import Base from '../layouts/Base.astro';
           method: 'POST',
           credentials: 'include',
         });
-        if (res.ok) btn.textContent = '✓ Kudos';
+        if (res.ok) {
+          btn.classList.add('kudoed');
+          btn.lastChild!.textContent = ' Kudoed';
+        }
       } finally {
         btn.disabled = false;
       }
@@ -107,7 +192,18 @@ import Base from '../layouts/Base.astro';
   function formatDuration(s: number) {
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
+    if (h === 0) return `${m}m`;
     return `${h}h ${String(m).padStart(2, '0')}m`;
+  }
+
+  function sentenceCase(s: string) {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  function hash(s: string): number {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return Math.abs(h);
   }
 
   function escape(s: string) {

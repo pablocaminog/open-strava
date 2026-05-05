@@ -1,19 +1,23 @@
 ---
-import Base from '../../layouts/Base.astro';
+import Shell from '../../layouts/Shell.astro';
 const { handle } = Astro.params;
 ---
 
-<Base title={`@${handle} · pacelore`}>
-  <section class="space-y-6">
-    <header id="profile-header" class="space-y-2">
-      <h1 class="text-2xl font-bold">Loading…</h1>
+<Shell title={`@${handle}`}>
+  <div class="stack" style="gap: 20px;">
+    <header id="profile-header" class="stack" style="gap: 8px;">
+      <h1 class="h1">Loading…</h1>
     </header>
-    <ul id="profile-activities" class="space-y-2"></ul>
-  </section>
-</Base>
+
+    <div class="panel">
+      <div class="panel-header"><h3 class="h3" style="font-size: 16px;">Activities</h3></div>
+      <ul id="profile-activities" class="stack" style="list-style: none; margin: 0; padding: 0;"></ul>
+    </div>
+  </div>
+</Shell>
 
 <script define:vars={{ handle }}>
-  window.__OPEN_STRAVA_HANDLE__ = handle;
+  window.__PACELORE_HANDLE__ = handle;
 </script>
 
 <script>
@@ -41,22 +45,25 @@ const { handle } = Astro.params;
     tss: number | null;
   };
 
-  const handle = (window as unknown as { __OPEN_STRAVA_HANDLE__: string }).__OPEN_STRAVA_HANDLE__;
+  const handle = (window as unknown as { __PACELORE_HANDLE__: string }).__PACELORE_HANDLE__;
   const header = document.getElementById('profile-header')!;
   const list = document.getElementById('profile-activities')!;
 
-  init().catch((err) => (header.innerHTML = `<h1 class="text-2xl font-bold">Error: ${(err as Error).message}</h1>`));
+  init().catch(
+    (err) =>
+      (header.innerHTML = `<h1 class="h1">Couldn't load profile</h1><p class="caption">${(err as Error).message}</p>`),
+  );
 
   async function init() {
     const r = await fetch(`/api/v1/athletes/by-handle/${encodeURIComponent(handle)}`, {
       credentials: 'include',
     });
     if (r.status === 401) {
-      header.innerHTML = `Please <a class="text-accent hover:underline" href="/login">log in</a>.`;
+      header.innerHTML = `<h1 class="h1">Sign in required</h1><p class="caption">Sign in to view this profile — <a href="/login" style="color: var(--fg); text-decoration: underline;">go to sign in</a>.</p>`;
       return;
     }
     if (!r.ok) {
-      header.innerHTML = `<h1 class="text-2xl font-bold">Athlete not found</h1>`;
+      header.innerHTML = `<h1 class="h1">Athlete not found</h1>`;
       return;
     }
     const profile = (await r.json()) as ProfileResponse;
@@ -66,24 +73,34 @@ const { handle } = Astro.params;
 
   function renderHeader(p: ProfileResponse) {
     const display = p.athlete.displayName ?? p.athlete.handle;
-    const bio = p.athlete.bio ? `<p class="text-sm text-neutral-600 dark:text-neutral-400">${escape(p.athlete.bio)}</p>` : '';
-    const loc = p.athlete.location
-      ? `<p class="text-xs text-neutral-500">${escape(p.athlete.location)}</p>`
-      : '';
+    const initials = display
+      .split(/[\s_-]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((s) => s[0]?.toUpperCase() ?? '')
+      .join('') || display.slice(0, 2).toUpperCase();
+    const color = ((hash(p.athlete.handle) % 5) + 1) as 1 | 2 | 3 | 4 | 5;
+
     const followBtn = p.isSelf
       ? ''
-      : `<button id="follow-btn" data-following="${p.isFollowing}" class="rounded border border-neutral-300 px-3 py-1.5 text-sm hover:border-accent dark:border-neutral-700">${
+      : `<button id="follow-btn" data-following="${p.isFollowing}" class="btn ${p.isFollowing ? 'btn-secondary' : 'btn-primary'} btn-sm">${
           p.isFollowing ? 'Unfollow' : 'Follow'
         }</button>`;
     header.innerHTML = `
-      <h1 class="text-2xl font-bold">${escape(display)}</h1>
-      <p class="text-sm text-neutral-500">@${escape(p.athlete.handle)}</p>
-      ${bio}${loc}
-      <div class="flex gap-4 text-sm pt-2">
-        <span><strong>${p.counts.activities}</strong> activities</span>
-        <span><strong>${p.counts.followers}</strong> followers</span>
-        <span><strong>${p.counts.following}</strong> following</span>
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <span class="avatar lg" data-color="${color}"><span>${escape(initials)}</span></span>
+        <div style="flex: 1;">
+          <h1 class="h1">${escape(display)}</h1>
+          <p class="caption" style="font-family: var(--font-mono);">@${escape(p.athlete.handle)}</p>
+        </div>
         ${followBtn}
+      </div>
+      ${p.athlete.bio ? `<p class="body" style="max-width: 60ch;">${escape(p.athlete.bio)}</p>` : ''}
+      ${p.athlete.location ? `<p class="caption">${escape(p.athlete.location)}</p>` : ''}
+      <div class="row" style="gap: 24px; padding-top: 4px;">
+        <span class="metric-sm"><strong>${p.counts.activities}</strong> <span class="metric-label" style="display: inline;">activities</span></span>
+        <span class="metric-sm"><strong>${p.counts.followers}</strong> <span class="metric-label" style="display: inline;">followers</span></span>
+        <span class="metric-sm"><strong>${p.counts.following}</strong> <span class="metric-label" style="display: inline;">following</span></span>
       </div>
     `;
     if (!p.isSelf) wireFollowButton(p.athlete.id);
@@ -98,8 +115,11 @@ const { handle } = Astro.params;
       const method = isFollowing ? 'DELETE' : 'POST';
       const r = await fetch(`/api/v1/follows/${athleteId}`, { method, credentials: 'include' });
       if (r.ok) {
-        btn.dataset.following = String(!isFollowing);
-        btn.textContent = isFollowing ? 'Follow' : 'Unfollow';
+        const next = !isFollowing;
+        btn.dataset.following = String(next);
+        btn.textContent = next ? 'Unfollow' : 'Follow';
+        btn.classList.toggle('btn-primary', !next);
+        btn.classList.toggle('btn-secondary', next);
       }
       btn.disabled = false;
     });
@@ -111,23 +131,49 @@ const { handle } = Astro.params;
     const body = (await r.json()) as { items: Activity[] };
     list.innerHTML = '';
     if (body.items.length === 0) {
-      list.innerHTML = `<li class="text-sm text-neutral-600 dark:text-neutral-400">No activities visible.</li>`;
+      list.innerHTML = `<li class="empty" style="margin: 16px;">No activities visible.</li>`;
       return;
     }
     for (const a of body.items) {
       const li = document.createElement('li');
-      li.className = 'rounded border border-neutral-200 p-3 dark:border-neutral-800';
-      const date = new Date(a.startedAt * 1000).toLocaleDateString();
-      const dist = a.distanceM ? ` · ${(a.distanceM / 1000).toFixed(2)} km` : '';
-      const tss = a.tss != null ? ` · TSS ${a.tss.toFixed(0)}` : '';
+      const date = new Date(a.startedAt * 1000).toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+      const dist = a.distanceM != null ? `${(a.distanceM / 1000).toFixed(1)} km` : '—';
+      const dur = formatDuration(a.totalSeconds);
+      const tss = a.tss != null ? a.tss.toFixed(0) : '—';
       li.innerHTML = `
-        <a href="/activity/${escape(a.id)}" class="hover:text-accent">
-          <strong>${escape(a.name ?? a.sport)}</strong>
-          <span class="ml-2 text-xs text-neutral-500">${escape(date)} · ${escape(a.sport)}${escape(dist)}${escape(tss)}</span>
+        <a href="/activity/${escape(a.id)}" style="display: grid; grid-template-columns: 1fr 100px 120px 80px; gap: 16px; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--border);">
+          <div>
+            <strong style="font-size: 14px;">${escape(a.name ?? sentenceCase(a.sport))}</strong>
+            <p class="caption" style="margin-top: 2px; font-family: var(--font-mono);">${escape(date)} · ${escape(a.sport)}</p>
+          </div>
+          <span class="metric-sm">${escape(dur)}</span>
+          <span class="metric-sm">${escape(dist)}</span>
+          <span class="metric-sm">${escape(tss)} TSS</span>
         </a>
       `;
       list.appendChild(li);
     }
+  }
+
+  function formatDuration(s: number) {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (h === 0) return `${m}m`;
+    return `${h}h ${String(m).padStart(2, '0')}m`;
+  }
+
+  function sentenceCase(s: string) {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  function hash(s: string): number {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return Math.abs(h);
   }
 
   function escape(s: string) {

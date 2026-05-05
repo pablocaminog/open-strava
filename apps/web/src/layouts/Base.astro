@@ -3,8 +3,11 @@ interface Props {
   title?: string;
   description?: string;
 }
-const { title = 'pacelore', description = 'source-available, noncommercial training platform' } =
-  Astro.props;
+const {
+  title = 'pacelore',
+  description = 'Source-available, athlete-owned training platform. Your data. Your archive. Free for athletes.',
+} = Astro.props;
+const fullTitle = title === 'pacelore' ? 'pacelore' : `${title} · pacelore`;
 ---
 
 <!doctype html>
@@ -13,31 +16,18 @@ const { title = 'pacelore', description = 'source-available, noncommercial train
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
+    <meta name="theme-color" content="#0E1012" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>{title}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap"
+    />
+    <title>{fullTitle}</title>
   </head>
   <body>
-    <header class="border-b border-neutral-200 dark:border-neutral-800">
-      <div class="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-        <a href="/" class="font-semibold tracking-tight">pacelore</a>
-        <nav class="flex gap-4 text-sm text-neutral-600 dark:text-neutral-400">
-          <a href="/feed" class="hover:text-accent">Feed</a>
-          <a href="/upload" class="hover:text-accent">Upload</a>
-          <a href="/dashboard" class="hover:text-accent">Dashboard</a>
-          <a href="/calendar" class="hover:text-accent">Calendar</a>
-          <a href="/workouts" class="hover:text-accent">Workouts</a>
-          <a href="/challenges" class="hover:text-accent">Challenges</a>
-          <a href="/login" class="hover:text-accent">Login</a>
-        </nav>
-      </div>
-    </header>
-    <main class="mx-auto max-w-5xl px-4 py-8">
-      <slot />
-    </main>
-    <footer class="mt-16 border-t border-neutral-200 px-4 py-6 text-center text-xs text-neutral-500 dark:border-neutral-800">
-      PolyForm Noncommercial 1.0.0 ·
-      <a href="https://github.com/pablocaminog/pacelore" class="hover:text-accent">source</a>
-    </footer>
+    <slot />
   </body>
 </html>
 

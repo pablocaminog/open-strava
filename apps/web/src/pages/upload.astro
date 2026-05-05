@@ -1,30 +1,30 @@
 ---
-import Base from '../layouts/Base.astro';
+import Shell from '../layouts/Shell.astro';
+import Icon from '../components/Icon.astro';
 ---
 
-<Base title="Upload · pacelore">
-  <section class="mx-auto max-w-xl space-y-6">
-    <h1 class="text-2xl font-bold">Upload an activity</h1>
-    <p class="text-sm text-neutral-600 dark:text-neutral-400">
-      Drag a FIT, TCX, or GPX file onto the box, or click to choose. Your
-      browser uploads it directly to the API; parsing and metric computation
-      happen in the background.
-    </p>
+<Shell title="Upload" active="upload">
+  <div class="stack" style="gap: 20px; max-width: 720px;">
+    <header>
+      <h1 class="h1" style="font-size: 28px;">Upload an activity</h1>
+      <p class="muted body-sm" style="margin-top: 4px;">
+        Drag a FIT, TCX, or GPX file onto the box, or click to choose. Your browser uploads it
+        directly to the API; parsing and metric computation happen in the background.
+      </p>
+    </header>
 
-    <div
-      id="drop"
-      class="flex h-48 cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-neutral-300 text-center text-sm text-neutral-600 hover:border-accent dark:border-neutral-700 dark:text-neutral-400"
-    >
-      <div>
-        <strong class="block">Drop file here</strong>
-        <span>or click to choose · max 25 MB · .fit / .tcx / .gpx</span>
+    <label id="drop" class="dropzone">
+      <div class="stack" style="gap: 6px; align-items: center;">
+        <Icon name="upload" size={28} />
+        <strong style="font-size: 15px;">Drop file here</strong>
+        <span class="caption">or click to choose · max 25 MB · .fit / .tcx / .gpx</span>
       </div>
-    </div>
-    <input id="file-input" type="file" accept=".fit,.tcx,.gpx" class="sr-only" />
+      <input id="file-input" type="file" accept=".fit,.tcx,.gpx" style="display: none;" />
+    </label>
 
-    <ul id="results" class="space-y-2 text-sm" aria-live="polite"></ul>
-  </section>
-</Base>
+    <ul id="results" class="stack" style="list-style: none; margin: 0; padding: 0; gap: 8px;" aria-live="polite"></ul>
+  </div>
+</Shell>
 
 <script>
   const drop = document.getElementById('drop')!;
@@ -37,15 +37,14 @@ import Base from '../layouts/Base.astro';
     gpx: 'gpx',
   };
 
-  drop.addEventListener('click', () => fileInput.click());
   drop.addEventListener('dragover', (e) => {
     e.preventDefault();
-    drop.classList.add('border-accent');
+    drop.classList.add('is-dragging');
   });
-  drop.addEventListener('dragleave', () => drop.classList.remove('border-accent'));
+  drop.addEventListener('dragleave', () => drop.classList.remove('is-dragging'));
   drop.addEventListener('drop', async (e) => {
     e.preventDefault();
-    drop.classList.remove('border-accent');
+    drop.classList.remove('is-dragging');
     const files = Array.from(e.dataTransfer?.files ?? []);
     for (const f of files) await upload(f);
   });
@@ -59,16 +58,16 @@ import Base from '../layouts/Base.astro';
     const ext = file.name.toLowerCase().split('.').pop() ?? '';
     const source = SOURCE_BY_EXT[ext];
     const li = document.createElement('li');
-    li.className = 'rounded border border-neutral-200 px-3 py-2 dark:border-neutral-800';
-    li.textContent = `${file.name} — uploading…`;
+    li.className = 'panel';
+    li.innerHTML = `<div style="padding: 12px 16px;"><span class="metric-label">uploading</span> · ${escape(file.name)}</div>`;
     results.appendChild(li);
 
     if (!source) {
-      li.textContent = `${file.name} — unsupported extension`;
+      li.innerHTML = `<div style="padding: 12px 16px; color: var(--danger);">${escape(file.name)} — unsupported extension</div>`;
       return;
     }
     if (file.size > 25 * 1024 * 1024) {
-      li.textContent = `${file.name} — too large (>25 MB)`;
+      li.innerHTML = `<div style="padding: 12px 16px; color: var(--danger);">${escape(file.name)} — too large (>25 MB)</div>`;
       return;
     }
 
@@ -93,9 +92,23 @@ import Base from '../layouts/Base.astro';
         throw new Error(err.error ?? `HTTP ${res.status}`);
       }
       const body = (await res.json()) as { activityId: string };
-      li.innerHTML = `${file.name} — queued · <a class="text-accent hover:underline" href="/activity/${body.activityId}">view</a>`;
+      li.innerHTML = `
+        <div style="padding: 12px 16px; display: flex; align-items: center; gap: 12px;">
+          <span class="chip chip-success">queued</span>
+          <span style="flex: 1;">${escape(file.name)}</span>
+          <a class="btn btn-secondary btn-sm" href="/activity/${escape(body.activityId)}">View</a>
+        </div>
+      `;
     } catch (err) {
-      li.textContent = `${file.name} — failed: ${(err as Error).message}`;
+      li.innerHTML = `<div style="padding: 12px 16px; color: var(--danger);">${escape(file.name)} — failed: ${escape((err as Error).message)}</div>`;
     }
+  }
+
+  function escape(s: string) {
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 </script>

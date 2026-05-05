@@ -1,40 +1,117 @@
 ---
-import Base from '../layouts/Base.astro';
-import Feature from '../components/Feature.astro';
+import Marketing from '../layouts/Marketing.astro';
 ---
 
-<Base title="pacelore">
-  <section class="space-y-6">
-    <h1 class="text-4xl font-bold tracking-tight">Train. Own your data.</h1>
-    <p class="max-w-2xl text-lg text-neutral-700 dark:text-neutral-300">
-      pacelore is a free-to-use, source-available training platform — Strava-style
-      social feed and TrainingPeaks-style PMC charts, running entirely on Cloudflare.
-      Upload FIT/TCX/GPX, see your TSS / NP / IF / PMC, and export everything,
-      anytime. Personal and nonprofit use only.
-    </p>
-    <div class="flex gap-3">
-      <a
-        class="inline-flex items-center rounded bg-accent px-4 py-2 font-medium text-white hover:opacity-90"
-        href="/register">Create account</a
-      >
-      <a
-        class="inline-flex items-center rounded border border-neutral-300 px-4 py-2 font-medium hover:border-accent dark:border-neutral-700"
-        href="/login">Login</a
-      >
-    </div>
-  </section>
+<Marketing>
+  <div class="marketing-content">
+    <section class="marketing-hero">
+      <span class="metric-label">pace × lore — your training, told honestly</span>
+      <h1>Your data. Your analytics. Your archive.</h1>
+      <p>
+        A clean, modern alternative to Strava and TrainingPeaks. Ingest from Garmin, Strava, Zwift,
+        Apple Health, or direct FIT/TCX/GPX upload. Compute the analytics the incumbents paywall —
+        TSS, IF, NP, peak power curves, GAP, decoupling, CTL/ATL/TSB. Free for athletes, forever.
+      </p>
+      <div class="marketing-actions">
+        <a class="btn btn-primary btn-lg" href="/register">Create account</a>
+        <a class="btn btn-secondary btn-lg" href="/login">Sign in</a>
+        <a
+          class="btn btn-ghost btn-lg"
+          href="https://github.com/pablocaminog/pacelore">View source</a
+        >
+      </div>
+    </section>
 
-  <section class="mt-12 grid gap-4 md:grid-cols-3">
-    <Feature title="Data sovereignty">
-      Free export, open formats, public API. Your data, anywhere you want it.
-    </Feature>
-    <Feature title="No silent paywalls">
-      Free tier covers all core analytics. Paid tier is convenience, not gating.
-    </Feature>
-    <Feature title="Source-available">
-      PolyForm Noncommercial. Self-host on your own Cloudflare account for personal or
-      nonprofit use in under ten minutes. No commercial reuse.
-    </Feature>
-  </section>
-</Base>
+    <section class="marketing-numbers">
+      <div class="tile">
+        <span class="label">free tier</span>
+        <span class="v">$0</span>
+        <span class="delta flat">all core analytics, forever</span>
+      </div>
+      <div class="tile">
+        <span class="label">export</span>
+        <span class="v">FIT · TCX · GPX</span>
+        <span class="delta flat">your data, anytime</span>
+      </div>
+      <div class="tile">
+        <span class="label">infra</span>
+        <span class="v">edge<span class="u"> · cloudflare</span></span>
+        <span class="delta flat">global, autoscaling</span>
+      </div>
+      <div class="tile">
+        <span class="label">license</span>
+        <span class="v">PolyForm</span>
+        <span class="delta flat">noncommercial 1.0.0</span>
+      </div>
+    </section>
 
+    <section class="stack" style="gap: 16px;">
+      <h2 class="h2">What you get</h2>
+      <div class="marketing-features">
+        <article class="marketing-feature">
+          <h3>Data sovereignty</h3>
+          <p>
+            Free export, open formats, public REST + MCP API. Optional Arweave permanence and
+            ATProto export. Your archive is yours.
+          </p>
+        </article>
+        <article class="marketing-feature">
+          <h3>Analytics, unpaywalled</h3>
+          <p>
+            TSS, NP, IF, VI, kJ, peak power curves, HR zones, GAP (Minetti), decoupling, TRIMP,
+            rTSS — and PMC with CTL · ATL · TSB.
+          </p>
+        </article>
+        <article class="marketing-feature">
+          <h3>Social you can trust</h3>
+          <p>
+            Follow graph, kudos, threaded comments, segments with leaderboards, clubs, events. Public,
+            followers, or private — your call, per activity.
+          </p>
+        </article>
+        <article class="marketing-feature">
+          <h3>Source-available</h3>
+          <p>
+            Self-host on your own Cloudflare account in under ten minutes. Read the code, run it,
+            fork it. PolyForm Noncommercial — no commercial reuse.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <span class="metric-label">A representative ride</span>
+        <span class="row-end caption">numbers shown the way they're computed</span>
+      </div>
+      <div class="panel-body grid-tiles grid-cols-6">
+        <div class="tile">
+          <span class="label">distance</span>
+          <span class="v">84.2<span class="u"> km</span></span>
+        </div>
+        <div class="tile">
+          <span class="label">time</span>
+          <span class="v">3:14<span class="u">:08</span></span>
+        </div>
+        <div class="tile">
+          <span class="label">tss</span>
+          <span class="v">198</span>
+          <span class="delta">+12 vs avg</span>
+        </div>
+        <div class="tile">
+          <span class="label">np</span>
+          <span class="v">247<span class="u"> W</span></span>
+        </div>
+        <div class="tile">
+          <span class="label">if</span>
+          <span class="v">0.83</span>
+          <span class="delta flat">tempo</span>
+        </div>
+        <div class="tile">
+          <span class="label">elev</span>
+          <span class="v">1,420<span class="u"> m</span></span>
+        </div>
+      </div>
+    </section>
+  </div>
+</Marketing>

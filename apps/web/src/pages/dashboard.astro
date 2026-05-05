@@ -1,29 +1,65 @@
 ---
-import Base from '../layouts/Base.astro';
+import Shell from '../layouts/Shell.astro';
 ---
 
-<Base title="Dashboard · pacelore">
-  <section class="space-y-6">
-    <header>
-      <h1 class="text-2xl font-bold">Performance Management</h1>
-      <p id="dashboard-subtitle" class="text-sm text-neutral-600 dark:text-neutral-400">
-        Loading…
-      </p>
+<Shell title="Performance management" active="pmc">
+  <div class="stack" style="gap: 20px;">
+    <header class="row">
+      <h1 class="h1" style="font-size: 28px;">Performance management</h1>
+      <div class="segmented row-end" id="range-tabs">
+        <button type="button" data-range="30" class="">30d</button>
+        <button type="button" data-range="90" class="on">90d</button>
+        <button type="button" data-range="180">season</button>
+        <button type="button" data-range="365">year</button>
+      </div>
     </header>
+    <p id="dashboard-subtitle" class="muted body-sm">Loading…</p>
 
-    <dl id="latest-stats" class="grid grid-cols-2 gap-4 sm:grid-cols-4"></dl>
+    <div id="latest-stats" class="grid-tiles grid-cols-4"></div>
 
-    <section class="space-y-2">
-      <h2 class="text-lg font-semibold">CTL · ATL · TSB</h2>
-      <div id="pmc-chart" class="w-full"></div>
-    </section>
+    <div class="panel">
+      <div class="panel-header">
+        <h3 class="h3" style="font-size: 18px;">CTL · ATL · TSB</h3>
+        <div
+          class="row-end"
+          style="display: flex; gap: 16px; font-family: var(--font-mono); font-size: 12px; color: var(--fg-muted);"
+        >
+          <span style="display: inline-flex; align-items: center; gap: 6px;">
+            <span style="width: 14px; height: 2px; background: var(--pace-500);"></span>CTL
+          </span>
+          <span style="display: inline-flex; align-items: center; gap: 6px;">
+            <span style="width: 14px; border-top: 2px dashed var(--ink-700);"></span>ATL
+          </span>
+          <span style="display: inline-flex; align-items: center; gap: 6px;">
+            <span style="width: 14px; height: 8px; background: oklch(0.66 0.11 150 / 0.18);"></span>TSB
+          </span>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div id="pmc-chart" style="width: 100%;"></div>
+      </div>
+    </div>
 
-    <section class="space-y-2">
-      <h2 class="text-lg font-semibold">Daily TSS</h2>
-      <div id="tss-chart" class="w-full"></div>
-    </section>
-  </section>
-</Base>
+    <div class="panel">
+      <div class="panel-header">
+        <h3 class="h3" style="font-size: 16px;">Daily TSS</h3>
+      </div>
+      <div class="panel-body">
+        <div id="tss-chart" style="width: 100%;"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <h3 class="h3" style="font-size: 16px;">Calendar · last 12 weeks</h3>
+        <span class="row-end caption">5-step zone ramp · cool slate → clay</span>
+      </div>
+      <div class="panel-body">
+        <div id="heatmap" style="display: flex;"></div>
+      </div>
+    </div>
+  </div>
+</Shell>
 
 <script>
   import uPlot from 'uplot';
@@ -33,53 +69,93 @@ import Base from '../layouts/Base.astro';
 
   const subtitle = document.getElementById('dashboard-subtitle')!;
   const stats = document.getElementById('latest-stats')!;
+  const tabs = document.getElementById('range-tabs')!;
+  let user: { id: string; handle: string } | null = null;
 
   init().catch((err) => {
-    subtitle.textContent = `Failed to load: ${(err as Error).message}`;
+    subtitle.textContent = `Couldn't load: ${(err as Error).message}`;
+  });
+
+  tabs.addEventListener('click', (ev) => {
+    const t = ev.target as HTMLElement;
+    const range = t.dataset.range;
+    if (!range) return;
+    tabs.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === t));
+    void reload(Number(range));
   });
 
   async function init() {
     const me = await fetch('/api/v1/auth/me', { credentials: 'include' });
     if (!me.ok) {
-      subtitle.innerHTML = `Please <a class="text-accent hover:underline" href="/login">log in</a>.`;
+      subtitle.innerHTML = `Sign in to see your dashboard — <a href="/login" style="color: var(--fg); text-decoration: underline;">go to sign in</a>.`;
       return;
     }
-    const { user } = (await me.json()) as { user: { id: string; handle: string } };
+    user = ((await me.json()) as { user: { id: string; handle: string } }).user;
+    await reload(90);
+  }
 
+  async function reload(rangeDays: number) {
+    if (!user) return;
     const to = todayIso();
-    const from = isoDaysAgo(120);
-    const pmcRes = await fetch(`/api/v1/athletes/${user.id}/pmc?from=${from}&to=${to}`, {
+    const from = isoDaysAgo(rangeDays);
+    const r = await fetch(`/api/v1/athletes/${user.id}/pmc?from=${from}&to=${to}`, {
       credentials: 'include',
     });
-    if (!pmcRes.ok) throw new Error(`pmc HTTP ${pmcRes.status}`);
-    const { days } = (await pmcRes.json()) as { days: Day[] };
-
+    if (!r.ok) throw new Error(`pmc HTTP ${r.status}`);
+    const { days } = (await r.json()) as { days: Day[] };
     if (days.length === 0) {
-      subtitle.innerHTML = `No activities yet. <a class="text-accent hover:underline" href="/upload">Upload one</a>.`;
+      subtitle.innerHTML = `No activities yet. <a href="/upload" style="color: var(--fg); text-decoration: underline;">Upload one</a> to get started.`;
+      stats.innerHTML = '';
+      document.getElementById('pmc-chart')!.innerHTML = '';
+      document.getElementById('tss-chart')!.innerHTML = '';
+      document.getElementById('heatmap')!.innerHTML = '';
       return;
     }
-
     subtitle.textContent = `${user.handle} · last ${days.length} days`;
     renderStats(days);
     renderPmcChart(days);
     renderTssChart(days);
+    renderHeatmap(days.slice(-12 * 7));
   }
 
   function renderStats(days: Day[]) {
     const last = days[days.length - 1]!;
-    const cells: { label: string; value: string }[] = [
-      { label: 'CTL (fitness)', value: last.ctl.toFixed(1) },
-      { label: 'ATL (fatigue)', value: last.atl.toFixed(1) },
-      { label: 'TSB (form)', value: last.tsb.toFixed(1) },
-      { label: '7-day TSS', value: days.slice(-7).reduce((a, b) => a + b.tss, 0).toFixed(0) },
+    const tss7 = days.slice(-7).reduce((a, b) => a + b.tss, 0);
+    const tss7prev = days.slice(-14, -7).reduce((a, b) => a + b.tss, 0);
+    const tssDelta = tss7 - tss7prev;
+    const ctlDelta = last.ctl - (days[Math.max(0, days.length - 8)]?.ctl ?? last.ctl);
+    const tiles: { label: string; value: string; delta?: string; deltaNeg?: boolean }[] = [
+      {
+        label: 'ctl · fitness',
+        value: last.ctl.toFixed(1),
+        delta: `${ctlDelta >= 0 ? '+' : ''}${ctlDelta.toFixed(1)} in 7d`,
+        deltaNeg: ctlDelta < 0,
+      },
+      {
+        label: 'atl · fatigue',
+        value: last.atl.toFixed(1),
+      },
+      {
+        label: 'tsb · form',
+        value: last.tsb.toFixed(1),
+        delta: last.tsb < -10 ? 'loaded' : last.tsb > 10 ? 'fresh' : 'neutral',
+        deltaNeg: last.tsb < -10,
+      },
+      {
+        label: '7-day tss',
+        value: tss7.toFixed(0),
+        delta: `${tssDelta >= 0 ? '+' : ''}${tssDelta.toFixed(0)} vs prev 7d`,
+        deltaNeg: tssDelta < 0,
+      },
     ];
-    stats.innerHTML = cells
+    stats.innerHTML = tiles
       .map(
-        (c) =>
-          `<div class="rounded border border-neutral-200 p-3 dark:border-neutral-800">
-            <dt class="text-xs uppercase text-neutral-500">${c.label}</dt>
-            <dd class="text-lg font-semibold">${c.value}</dd>
-          </div>`,
+        (t) => `
+        <div class="tile">
+          <span class="label">${t.label}</span>
+          <span class="v">${t.value}</span>
+          ${t.delta ? `<span class="delta ${t.deltaNeg ? 'neg' : ''}">${t.delta}</span>` : ''}
+        </div>`,
       )
       .join('');
   }
@@ -89,51 +165,78 @@ import Base from '../layouts/Base.astro';
     const ctl = days.map((d) => d.ctl);
     const atl = days.map((d) => d.atl);
     const tsb = days.map((d) => d.tsb);
+    const el = document.getElementById('pmc-chart')! as HTMLElement;
+    el.innerHTML = '';
     const opts: uPlot.Options = {
-      width: 900,
+      width: el.clientWidth || 900,
       height: 300,
       cursor: { drag: { x: true, y: false } },
       scales: { x: { time: true } },
       series: [
         {},
-        { label: 'CTL', stroke: '#3b82f6', width: 2 },
-        { label: 'ATL', stroke: '#ef4444', width: 1.5 },
-        { label: 'TSB', stroke: '#10b981', width: 1.5, dash: [4, 2] },
+        { label: 'CTL', stroke: '#C8FA1F', width: 2 },
+        { label: 'ATL', stroke: 'var(--ink-700)', width: 1.5, dash: [4, 3] },
+        { label: 'TSB', stroke: 'oklch(0.55 0.11 150)', width: 1.25 },
       ],
     };
-    new uPlot(opts, [t, ctl, atl, tsb], document.getElementById('pmc-chart')!);
+    new uPlot(opts, [t, ctl, atl, tsb], el);
   }
 
   function renderTssChart(days: Day[]) {
     const t = days.map((d) => Math.floor(Date.parse(d.date) / 1000));
     const tss = days.map((d) => d.tss);
+    const el = document.getElementById('tss-chart')! as HTMLElement;
+    el.innerHTML = '';
     const opts: uPlot.Options = {
-      width: 900,
+      width: el.clientWidth || 900,
       height: 200,
       scales: { x: { time: true } },
       series: [
         {},
         {
           label: 'TSS',
-          stroke: '#fc4c02',
+          stroke: '#C8FA1F',
           paths: uPlot.paths.bars!({ size: [0.6, 100] }),
         },
       ],
     };
-    new uPlot(opts, [t, tss], document.getElementById('tss-chart')!);
+    new uPlot(opts, [t, tss], el);
   }
 
-  function todayIso(): string {
+  function renderHeatmap(days: Day[]) {
+    const colors = [
+      'var(--zone-0)',
+      'var(--zone-1)',
+      'var(--zone-2)',
+      'var(--zone-3)',
+      'var(--zone-4)',
+      'var(--zone-5)',
+    ];
+    const max = Math.max(50, ...days.map((d) => d.tss));
+    const el = document.getElementById('heatmap')!;
+    el.style.display = 'grid';
+    el.style.gridTemplateRows = 'repeat(7, 18px)';
+    el.style.gridAutoFlow = 'column';
+    el.style.gridAutoColumns = '18px';
+    el.style.gap = '3px';
+    el.innerHTML = days
+      .map((d) => {
+        const r = d.tss / max;
+        const lvl = d.tss <= 0 ? 0 : r < 0.2 ? 1 : r < 0.4 ? 2 : r < 0.6 ? 3 : r < 0.85 ? 4 : 5;
+        return `<div title="${d.date} · TSS ${d.tss.toFixed(0)}" style="width: 18px; height: 18px; border-radius: 4px; background: ${colors[lvl]};"></div>`;
+      })
+      .join('');
+  }
+
+  function todayIso() {
     const d = new Date();
     return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
   }
-
-  function isoDaysAgo(n: number): string {
+  function isoDaysAgo(n: number) {
     const d = new Date(Date.now() - n * 86_400_000);
     return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
   }
-
-  function pad(n: number): string {
+  function pad(n: number) {
     return String(n).padStart(2, '0');
   }
 </script>

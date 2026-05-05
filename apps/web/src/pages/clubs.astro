@@ -1,30 +1,35 @@
 ---
-import Base from '../layouts/Base.astro';
+import Shell from '../layouts/Shell.astro';
+import Icon from '../components/Icon.astro';
 ---
 
-<Base title="Clubs · pacelore">
-  <section class="space-y-6">
-    <h1 class="text-2xl font-bold">Clubs</h1>
-    <ul id="club-list" class="space-y-2"></ul>
-    <details class="rounded border border-neutral-200 p-3 dark:border-neutral-800">
-      <summary class="cursor-pointer font-medium">Create a club</summary>
-      <form id="new-club" class="mt-2 space-y-2">
-        <input
-          name="name"
-          required
-          placeholder="Name"
-          class="w-full rounded border border-neutral-300 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-900"
-        />
-        <textarea
-          name="description"
-          placeholder="Description"
-          class="w-full rounded border border-neutral-300 px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-        ></textarea>
-        <button class="rounded bg-accent px-3 py-1.5 text-sm text-white">Create</button>
+<Shell title="Clubs" active="clubs">
+  <div class="stack" style="gap: 20px;">
+    <header>
+      <h1 class="h1" style="font-size: 28px;">Clubs</h1>
+      <p class="muted body-sm" style="margin-top: 4px;">Find a group ride. Or start your own.</p>
+    </header>
+
+    <ul id="club-list" class="stack" style="list-style: none; margin: 0; padding: 0; gap: 12px;"></ul>
+
+    <details class="panel">
+      <summary style="cursor: pointer; padding: 14px 20px; display: flex; align-items: center; gap: 8px; font-weight: 500;">
+        <Icon name="plus" size={16} /> Create a club
+      </summary>
+      <form id="new-club" class="panel-body stack" style="gap: 10px;">
+        <div class="field">
+          <label class="field-label">Name</label>
+          <input class="input" name="name" required />
+        </div>
+        <div class="field">
+          <label class="field-label">Description</label>
+          <textarea class="textarea" name="description"></textarea>
+        </div>
+        <button class="btn btn-primary" style="align-self: flex-start;" type="submit">Create</button>
       </form>
     </details>
-  </section>
-</Base>
+  </div>
+</Shell>
 
 <script>
   const list = document.getElementById('club-list')!;
@@ -37,10 +42,7 @@ import Base from '../layouts/Base.astro';
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: fd.get('name'),
-        description: fd.get('description'),
-      }),
+      body: JSON.stringify({ name: fd.get('name'), description: fd.get('description') }),
     });
     if (r.ok) await load();
   });
@@ -48,22 +50,35 @@ import Base from '../layouts/Base.astro';
   async function load() {
     const r = await fetch('/api/v1/clubs', { credentials: 'include' });
     if (!r.ok) {
-      list.innerHTML = `<li class="text-sm">log in to see clubs</li>`;
+      list.innerHTML = `<li class="empty">Sign in to see clubs.</li>`;
       return;
     }
-    const body = (await r.json()) as { items: { id: string; name: string; sportFocus: string | null }[] };
+    const body = (await r.json()) as {
+      items: { id: string; name: string; sportFocus: string | null }[];
+    };
     list.innerHTML = '';
     if (body.items.length === 0) {
-      list.innerHTML = `<li class="text-sm text-neutral-600 dark:text-neutral-400">No public clubs yet.</li>`;
+      list.innerHTML = `<li class="empty">No public clubs yet — create one above.</li>`;
+      return;
     }
     for (const c of body.items) {
       const li = document.createElement('li');
-      li.className = 'rounded border border-neutral-200 p-3 dark:border-neutral-800';
-      li.innerHTML = `<a href="/clubs/${c.id}" class="hover:text-accent"><strong>${escape(c.name)}</strong>${c.sportFocus ? ` · ${escape(c.sportFocus)}` : ''}</a>`;
+      li.className = 'panel';
+      li.innerHTML = `
+        <a href="/clubs/${escape(c.id)}" style="display: flex; align-items: center; gap: 16px; padding: 14px 20px;">
+          <strong style="flex: 1; font-size: 15px;">${escape(c.name)}</strong>
+          ${c.sportFocus ? `<span class="chip chip-muted">${escape(c.sportFocus)}</span>` : ''}
+          <span class="metric-label">view</span>
+        </a>
+      `;
       list.appendChild(li);
     }
   }
   function escape(s: string) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 </script>

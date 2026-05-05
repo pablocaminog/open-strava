@@ -1,36 +1,44 @@
 ---
 import Base from '../layouts/Base.astro';
+import Icon from '../components/Icon.astro';
 ---
 
-<Base title="Login · pacelore">
-  <section class="mx-auto max-w-md space-y-6">
-    <h1 class="text-2xl font-bold">Welcome back</h1>
-    <p class="text-sm text-neutral-600 dark:text-neutral-400">
-      Enter your email; we'll prompt your saved passkey.
-    </p>
+<Base title="Sign in">
+  <div class="auth-shell">
+    <div class="auth-card">
+      <a href="/" aria-label="pacelore home">
+        <img src="/logo-wordmark.svg" alt="pacelore" style="height: 28px; color: var(--fg);" />
+      </a>
+      <div>
+        <h2 class="h2" style="font-size: 22px;">Sign in</h2>
+        <p class="muted body-sm" style="margin-top: 6px;">
+          Your data, your archive. Free for athletes.
+        </p>
+      </div>
 
-    <form id="login-form" class="space-y-4">
-      <label class="block">
-        <span class="text-sm font-medium">Email</span>
-        <input
-          required
-          name="email"
-          type="email"
-          class="mt-1 w-full rounded border border-neutral-300 px-3 py-2 dark:border-neutral-700 dark:bg-neutral-900"
-        />
-      </label>
-      <button
-        type="submit"
-        class="rounded bg-accent px-4 py-2 font-medium text-white hover:opacity-90 disabled:opacity-50"
-        >Login with passkey</button
-      >
-      <p id="login-status" class="text-sm" aria-live="polite"></p>
-    </form>
+      <form id="login-form" class="stack" style="gap: 14px;">
+        <div class="field">
+          <label class="field-label" for="login-email">Email</label>
+          <input
+            id="login-email"
+            class="input"
+            required
+            name="email"
+            type="email"
+            autocomplete="email"
+          />
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg">
+          <Icon name="key" size={14} /> Continue with passkey
+        </button>
+        <p id="login-status" class="caption" aria-live="polite"></p>
+      </form>
 
-    <p class="text-sm text-neutral-600 dark:text-neutral-400">
-      No account yet? <a href="/register" class="text-accent hover:underline">Create one</a>
-    </p>
-  </section>
+      <p class="caption" style="text-align: center;">
+        New here? <a href="/register" style="color: var(--fg); text-decoration: underline;">Create an account</a>
+      </p>
+    </div>
+  </div>
 </Base>
 
 <script>
@@ -52,7 +60,10 @@ import Base from '../layouts/Base.astro';
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
-      if (!optionsRes.ok) throw new Error((await optionsRes.json().catch(() => ({ error: optionsRes.statusText }))).error);
+      if (!optionsRes.ok)
+        throw new Error(
+          (await optionsRes.json().catch(() => ({ error: optionsRes.statusText }))).error,
+        );
       const { challengeId, options } = await optionsRes.json();
 
       const assertion = await startAuthentication({ optionsJSON: options });
@@ -63,12 +74,15 @@ import Base from '../layouts/Base.astro';
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ challengeId, response: assertion }),
       });
-      if (!verifyRes.ok) throw new Error((await verifyRes.json().catch(() => ({ error: verifyRes.statusText }))).error);
+      if (!verifyRes.ok)
+        throw new Error(
+          (await verifyRes.json().catch(() => ({ error: verifyRes.statusText }))).error,
+        );
 
-      status.textContent = 'Logged in — redirecting…';
+      status.textContent = 'Signed in — redirecting…';
       window.location.href = '/dashboard';
     } catch (err) {
-      status.textContent = `Error: ${(err as Error).message}`;
+      status.textContent = `Couldn't sign in: ${(err as Error).message}`;
       submit.disabled = false;
     }
   });

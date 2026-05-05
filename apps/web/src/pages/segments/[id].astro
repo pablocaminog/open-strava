@@ -1,71 +1,186 @@
 ---
-import Base from '../../layouts/Base.astro';
+import Shell from '../../layouts/Shell.astro';
+import Icon from '../../components/Icon.astro';
 const { id } = Astro.params;
 ---
 
-<Base title={`Segment · ${id}`}>
-  <section class="space-y-6">
-    <header id="seg-header" class="space-y-1">
-      <h1 class="text-2xl font-bold">Loading…</h1>
-    </header>
-    <section class="space-y-2">
-      <h2 class="text-lg font-semibold">Leaderboard</h2>
-      <div class="flex gap-2 text-sm">
-        <button data-w="all" class="window-btn rounded border px-2 py-1">All-time</button>
-        <button data-w="year" class="window-btn rounded border px-2 py-1">This year</button>
-        <button data-w="90d" class="window-btn rounded border px-2 py-1">Last 90 days</button>
+<Shell title="Segment" active="segments">
+  <div class="stack" style="gap: 20px;">
+    <a href="/segments" class="btn btn-ghost btn-sm" style="align-self: flex-start; padding: 6px 8px;">
+      <Icon name="arrow-left" size={14} /> Back
+    </a>
+
+    <header id="seg-header" style="display: flex; align-items: flex-end; gap: 16px;">
+      <div style="flex: 1;">
+        <span class="metric-label">Segment</span>
+        <h1 class="h1" style="margin-top: 4px;">Loading…</h1>
       </div>
-      <ol id="lb-list" class="space-y-1 text-sm"></ol>
-    </section>
-  </section>
-</Base>
+      <button class="btn btn-secondary" type="button" id="star-btn">
+        <Icon name="star" size={14} /> Star segment
+      </button>
+    </header>
+
+    <div id="seg-tiles" class="grid-tiles grid-cols-4"></div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <h3 class="h3" style="font-size: 16px;">Leaderboard</h3>
+        <div class="segmented row-end" id="window-tabs">
+          <button type="button" data-w="all" class="on">Overall</button>
+          <button type="button" data-w="year">This year</button>
+          <button type="button" data-w="90d">90 days</button>
+        </div>
+      </div>
+      <div id="lb-table-wrap"></div>
+    </div>
+  </div>
+</Shell>
 
 <script define:vars={{ id }}>
-  window.__OPEN_STRAVA_SEG__ = id;
+  window.__PACELORE_SEG_ID__ = id;
 </script>
 
 <script>
-  const id = (window as unknown as { __OPEN_STRAVA_SEG__: string }).__OPEN_STRAVA_SEG__;
+  const id = (window as unknown as { __PACELORE_SEG_ID__: string }).__PACELORE_SEG_ID__;
   const header = document.getElementById('seg-header')!;
-  const list = document.getElementById('lb-list')!;
+  const tiles = document.getElementById('seg-tiles')!;
+  const tableWrap = document.getElementById('lb-table-wrap')!;
+  const tabs = document.getElementById('window-tabs')!;
 
-  init().catch((e) => (header.textContent = `Failed: ${(e as Error).message}`));
-  document.querySelectorAll('.window-btn').forEach((b) =>
-    b.addEventListener('click', () => loadLeaderboard((b as HTMLButtonElement).dataset.w!)),
-  );
+  init().catch((e) => {
+    header.innerHTML = `<div><span class="metric-label">Segment</span><h1 class="h1">Couldn't load</h1><p class="caption">${(e as Error).message}</p></div>`;
+  });
+
+  tabs.addEventListener('click', (ev) => {
+    const t = ev.target as HTMLElement;
+    const w = t.dataset.w;
+    if (!w) return;
+    tabs.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === t));
+    void loadLeaderboard(w);
+  });
 
   async function init() {
     const r = await fetch(`/api/v1/segments/${id}`, { credentials: 'include' });
     if (!r.ok) {
-      header.innerHTML = `<h1 class="text-2xl font-bold">Not found</h1>`;
+      header.innerHTML = `<div><span class="metric-label">Segment</span><h1 class="h1">Not found</h1></div>`;
       return;
     }
-    const seg = (await r.json()) as { name: string; sport: string; distanceM: number };
-    header.innerHTML = `<p class="text-xs uppercase text-neutral-500">Segment</p>
-      <h1 class="text-2xl font-bold">${escape(seg.name)}</h1>
-      <p class="text-sm text-neutral-600 dark:text-neutral-400">${escape(seg.sport)} · ${(seg.distanceM / 1000).toFixed(2)} km</p>`;
+    const seg = (await r.json()) as {
+      name: string;
+      sport: string;
+      distanceM: number;
+      avgGrade?: number | null;
+    };
+    header.querySelector('h1')!.textContent = seg.name;
+    const sub = document.createElement('p');
+    sub.className = 'muted body-sm';
+    sub.style.marginTop = '4px';
+    sub.textContent = `${seg.sport} · ${(seg.distanceM / 1000).toFixed(2)} km${
+      seg.avgGrade != null ? ` · ${(seg.avgGrade * 100).toFixed(1)}% avg grade` : ''
+    }`;
+    header.querySelector('div')!.appendChild(sub);
+
+    tiles.innerHTML = `
+      <div class="tile"><span class="label">distance</span><span class="v">${(seg.distanceM / 1000).toFixed(2)}<span class="u"> km</span></span></div>
+      <div class="tile"><span class="label">sport</span><span class="v" style="font-size: 20px;">${escape(seg.sport)}</span></div>
+      <div class="tile" id="tile-attempts"><span class="label">attempts</span><span class="v">—</span></div>
+      <div class="tile" id="tile-kom"><span class="label">kom</span><span class="v">—</span></div>
+    `;
+
     await loadLeaderboard('all');
   }
 
   async function loadLeaderboard(w: string) {
-    const r = await fetch(`/api/v1/segments/${id}/leaderboard?window=${w}`, { credentials: 'include' });
-    if (!r.ok) return;
-    const body = (await r.json()) as { items: { handle: string; timeSeconds: number }[] };
-    list.innerHTML = '';
-    body.items.forEach((it, i) => {
-      const li = document.createElement('li');
-      li.className = 'rounded border border-neutral-200 px-3 py-1 dark:border-neutral-800';
-      li.innerHTML = `<strong>${i + 1}.</strong> ${escape(it.handle ?? '')} — ${formatTime(it.timeSeconds)}`;
-      list.appendChild(li);
+    const r = await fetch(`/api/v1/segments/${id}/leaderboard?window=${w}`, {
+      credentials: 'include',
     });
+    if (!r.ok) {
+      tableWrap.innerHTML = `<div class="empty">Couldn't load leaderboard.</div>`;
+      return;
+    }
+    const body = (await r.json()) as {
+      items: {
+        athleteId?: string;
+        handle: string;
+        timeSeconds: number;
+        watts?: number | null;
+        startedAt?: number;
+      }[];
+    };
+    if (body.items.length === 0) {
+      tableWrap.innerHTML = `<div class="empty">No efforts in this window yet.</div>`;
+      return;
+    }
+    const kom = body.items[0]!;
+    document.getElementById('tile-attempts')!.querySelector('.v')!.textContent = String(
+      body.items.length,
+    );
+    document.getElementById('tile-kom')!.querySelector('.v')!.innerHTML = formatTime(
+      kom.timeSeconds,
+    );
+
+    let html = `
+      <table class="lb">
+        <thead>
+          <tr>
+            <th style="width: 64px;">Rank</th>
+            <th>Athlete</th>
+            <th>Time</th>
+            <th>Power</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+    body.items.forEach((it, i) => {
+      const isKom = i === 0;
+      const date = it.startedAt
+        ? new Date(it.startedAt * 1000).toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+          })
+        : '—';
+      const initials = (it.handle ?? '?')
+        .split(/[\s_-]+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((s) => s[0]?.toUpperCase() ?? '')
+        .join('');
+      const color = ((hash(it.handle) % 5) + 1) as 1 | 2 | 3 | 4 | 5;
+      html += `
+        <tr>
+          <td class="num">${isKom ? '<span class="chip chip-pace">KOM</span>' : i + 1}</td>
+          <td>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span class="avatar sm" data-color="${color}"><span>${escape(initials || '?')}</span></span>
+              <span>${escape(it.handle ?? '')}</span>
+            </div>
+          </td>
+          <td class="num">${formatTime(it.timeSeconds)}</td>
+          <td class="num">${it.watts != null ? `${Math.round(it.watts)} W` : '—'}</td>
+          <td class="num" style="color: var(--fg-muted);">${escape(date)}</td>
+        </tr>
+      `;
+    });
+    html += '</tbody></table>';
+    tableWrap.innerHTML = html;
   }
 
   function formatTime(s: number) {
     const m = Math.floor(s / 60);
-    const ss = s % 60;
+    const ss = Math.floor(s % 60);
     return `${m}:${String(ss).padStart(2, '0')}`;
   }
+  function hash(s: string): number {
+    let h = 0;
+    for (let i = 0; i < (s ?? '').length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return Math.abs(h);
+  }
   function escape(s: string) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return (s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 </script>
