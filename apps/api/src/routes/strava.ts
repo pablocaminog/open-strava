@@ -45,7 +45,12 @@ const TICK_BATCH = 25;
 
 stravaRoutes.get('/auth/strava/start', requireSession(), (c) => {
   const env = c.env;
-  if (!env.STRAVA_CLIENT_ID) throw new HTTPException(500, { message: 'STRAVA_CLIENT_ID not set' });
+  if (!env.STRAVA_CLIENT_ID || !env.STRAVA_CLIENT_SECRET) {
+    throw new HTTPException(503, {
+      message:
+        'Strava integration not configured on this instance. Admin: set STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET.',
+    });
+  }
   const redirect = `${env.APP_ORIGIN.replace(/\/$/, '')}/api/v1/auth/strava/callback`;
   const url = new URL(STRAVA_AUTH);
   url.searchParams.set('client_id', env.STRAVA_CLIENT_ID);

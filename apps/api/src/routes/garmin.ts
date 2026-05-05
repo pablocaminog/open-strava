@@ -36,7 +36,10 @@ const AUTHORIZE_URL = 'https://connect.garmin.com/oauthConfirm';
 
 function consumer(env: Env) {
   if (!env.GARMIN_CONSUMER_KEY || !env.GARMIN_CONSUMER_SECRET) {
-    throw new HTTPException(500, { message: 'Garmin consumer credentials not set' });
+    throw new HTTPException(503, {
+      message:
+        'Garmin integration not configured on this instance. Admin: set GARMIN_CONSUMER_KEY and GARMIN_CONSUMER_SECRET.',
+    });
   }
   return {
     consumerKey: env.GARMIN_CONSUMER_KEY,
