@@ -25,6 +25,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import type { Env, IngestJob } from '../env.js';
 import { requireSession, type AuthVariables } from '../middleware/auth.js';
+import { loadSession } from '../auth/session.js';
 import { parseFormBody, signOAuth1 } from '../integrations/oauth1.js';
 import { uuidv7 } from '../util/uuid.js';
 import { sendImportDoneEmail } from './strava.js';
@@ -48,8 +49,11 @@ function consumer(env: Env) {
   };
 }
 
-garminRoutes.get('/auth/garmin/start', requireSession(), async (c) => {
-  const session = c.get('session');
+garminRoutes.get('/auth/garmin/start', async (c) => {
+  const session = await loadSession(c.env, c.req.header('Cookie') ?? null);
+  if (!session) {
+    return c.redirect(`${c.env.APP_ORIGIN.replace(/\/$/, '')}/login?next=/upload`);
+  }
   const callback = `${c.env.APP_ORIGIN.replace(/\/$/, '')}/api/v1/auth/garmin/callback`;
 
   const signed = await signOAuth1(consumer(c.env), 'POST', REQ_TOKEN_URL, {

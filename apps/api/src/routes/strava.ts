@@ -25,6 +25,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import type { Env, IngestJob } from '../env.js';
 import { requireSession, type AuthVariables } from '../middleware/auth.js';
+import { loadSession } from '../auth/session.js';
 import { uuidv7 } from '../util/uuid.js';
 import { sendEmail } from '../integrations/email.js';
 import { importDoneEmail } from '../integrations/email-templates.js';
@@ -45,8 +46,14 @@ const TICK_BATCH = 25;
 
 // --------------------------- OAuth ---------------------------
 
-stravaRoutes.get('/auth/strava/start', requireSession(), (c) => {
+stravaRoutes.get('/auth/strava/start', async (c) => {
   const env = c.env;
+  // Browser navigation lands here directly — bounce unauth'd users to
+  // /login instead of returning a JSON 401 the browser would render raw.
+  const session = await loadSession(env, c.req.header('Cookie') ?? null);
+  if (!session) {
+    return c.redirect(`${env.APP_ORIGIN.replace(/\/$/, '')}/login?next=/upload`);
+  }
   if (!env.STRAVA_CLIENT_ID || !env.STRAVA_CLIENT_SECRET) {
     throw new HTTPException(503, {
       message:

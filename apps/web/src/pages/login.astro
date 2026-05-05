@@ -81,7 +81,8 @@ import Wordmark from '../components/Wordmark.astro';
         );
 
       status.textContent = 'Signed in — redirecting…';
-      window.location.href = '/dashboard';
+      const next = new URL(window.location.href).searchParams.get('next');
+      window.location.href = next && next.startsWith('/') ? next : '/dashboard';
     } catch (err) {
       status.textContent = `Couldn't sign in: ${(err as Error).message}`;
       submit.disabled = false;
