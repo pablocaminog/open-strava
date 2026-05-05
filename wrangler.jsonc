@@ -10,29 +10,29 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "build": {
-    "command": "pnpm install --frozen-lockfile=false && pnpm --filter @pacelore/api typecheck",
+    "command": "pnpm install --frozen-lockfile=false && pnpm --filter @pacelore/api typecheck"
   },
   "vars": {
     "ENV": "production",
-    "APP_ORIGIN": "https://pacelore.com",
+    "APP_ORIGIN": "https://pacelore.com"
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "pacelore",
       "database_id": "2070e24f-b8dd-4d71-b1b9-6a824ac883f5",
-      "migrations_dir": "infra/wrangler/migrations",
-    },
+      "migrations_dir": "infra/wrangler/migrations"
+    }
   ],
   "r2_buckets": [
     { "binding": "RAW_BUCKET", "bucket_name": "pacelore-raw" },
     { "binding": "PARSED_BUCKET", "bucket_name": "pacelore-parsed" },
-    { "binding": "EXPORTS_BUCKET", "bucket_name": "pacelore-exports" },
+    { "binding": "EXPORTS_BUCKET", "bucket_name": "pacelore-exports" }
   ],
   "kv_namespaces": [
     { "binding": "KV_SESSIONS", "id": "bec561a091284c2893c74433bc5aea81" },
     { "binding": "KV_LEADERBOARDS", "id": "77f5cb560b6f4f6abcdbd18f0769964b" },
-    { "binding": "KV_FEED", "id": "867c1cdbbb7c4b2faea48caf690c3558" },
+    { "binding": "KV_FEED", "id": "867c1cdbbb7c4b2faea48caf690c3558" }
   ],
   "send_email": [{ "name": "EMAIL" }],
   "queues": {
@@ -43,14 +43,14 @@
         "max_batch_size": 5,
         "max_batch_timeout": 5,
         "max_retries": 3,
-        "dead_letter_queue": "activity-ingest-dlq",
-      },
-    ],
+        "dead_letter_queue": "activity-ingest-dlq"
+      }
+    ]
   },
   "observability": {
-    "logs": { "enabled": true },
+    "logs": { "enabled": true }
   },
   "triggers": {
-    "crons": ["* * * * *", "0 5 * * *"],
-  },
+    "crons": ["* * * * *", "0 5 * * *"]
+  }
 }
