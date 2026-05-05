@@ -50,8 +50,10 @@ export async function persistActivity(env: Env, input: PersistInput): Promise<vo
       hr_avg, hr_max, power_avg, power_max,
       np, intensity_factor, tss, kj,
       speed_avg_ms, speed_max_ms,
-      raw_r2_path, parsed_r2_path, visibility
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'private')`,
+      raw_r2_path, parsed_r2_path, visibility,
+      external_source, external_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'private', ?, ?)
+     ON CONFLICT(external_source, external_id) DO NOTHING`,
   )
     .bind(
       job.activityId,
@@ -75,6 +77,8 @@ export async function persistActivity(env: Env, input: PersistInput): Promise<vo
       summary.speedMaxMs,
       job.rawR2Path,
       parsedKey,
+      job.externalSource ?? null,
+      job.externalId ?? null,
     )
     .run();
 

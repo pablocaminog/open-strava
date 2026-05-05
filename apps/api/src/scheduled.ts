@@ -1,20 +1,54 @@
 /**
  * Cron handler (configured via wrangler.toml [triggers]).
  *
- *   nightly: recompute pmc_daily ctl/atl/tsb for every athlete that
- *     trained in the last 90 days. Cheap — D1 EMA in JS over the last
- *     ~120 days of TSS rows, written back as a batch.
+ *   `* * * * *`  every-minute tick: advance up to N running import_jobs
+ *                                   (Strava/Garmin backfill workers).
+ *   `0 5 * * *`  nightly: recompute pmc_daily for active athletes.
+ *
+ * Cloudflare invokes this once per cron expression. We branch on
+ * `event.cron` so a single handler covers both.
  */
 
 import { pmcDaily } from '@pacelore/metrics';
 import type { Env } from './env.js';
+import { stravaTickOnce } from './routes/strava.js';
+import { garminTickOnce } from './routes/garmin.js';
+
+// How many import_jobs to advance per minute-tick. Each Strava tick costs
+// ~26 requests against the 100/15min quota — keep this low.
+const IMPORTS_PER_TICK = 4;
 
 export async function scheduledHandler(
-  _event: ScheduledController,
+  event: ScheduledController,
   env: Env,
   _ctx: ExecutionContext,
 ): Promise<void> {
-  await recomputePmcForActiveAthletes(env);
+  if (event.cron === '0 5 * * *') {
+    await recomputePmcForActiveAthletes(env);
+    return;
+  }
+  // Default branch covers `* * * * *` (and any future fine-grained cron).
+  await advanceImportJobs(env);
+}
+
+async function advanceImportJobs(env: Env): Promise<void> {
+  const rows = await env.DB.prepare(
+    `SELECT id, provider FROM import_jobs
+      WHERE status = 'running'
+      ORDER BY updated_at ASC
+      LIMIT ?`,
+  )
+    .bind(IMPORTS_PER_TICK)
+    .all<{ id: string; provider: 'strava' | 'garmin' }>();
+
+  for (const row of rows.results ?? []) {
+    try {
+      if (row.provider === 'strava') await stravaTickOnce(env, row.id);
+      else if (row.provider === 'garmin') await garminTickOnce(env, row.id);
+    } catch (err) {
+      console.error('import tick failed', row.id, err);
+    }
+  }
 }
 
 async function recomputePmcForActiveAthletes(env: Env): Promise<void> {

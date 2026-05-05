@@ -62,6 +62,12 @@ APP_ORIGIN = "https://pacelore.com"
 # name = "LIVE_RIDE"
 # class_name = "LiveRide"
 
+# Cron triggers:
+#   * * * * *   advance running import_jobs (Strava/Garmin backfill).
+#   0 5 * * *   nightly PMC rollup.
+[triggers]
+crons = ["* * * * *", "0 5 * * *"]
+
 # Observability — pipe logs to R2 via Logpush separately (configured in CF dashboard).
 [observability.logs]
 enabled = true

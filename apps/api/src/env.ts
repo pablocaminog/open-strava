@@ -37,4 +37,9 @@ export interface IngestJob {
   athleteId: string;
   rawR2Path: string;
   source: 'fit' | 'tcx' | 'gpx';
+  /** Provider that originated this activity, when known. Used for
+   * de-duplication on re-import. */
+  externalSource?: 'strava' | 'garmin';
+  /** Provider-side activity id (Strava activity id, Garmin summary id). */
+  externalId?: string;
 }

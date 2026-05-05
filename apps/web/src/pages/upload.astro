@@ -15,21 +15,24 @@ import Icon from '../components/Icon.astro';
       </p>
     </header>
 
-    <section class="grid-tiles" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px;">
+    <section class="grid-tiles" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px;">
       <div class="panel">
         <div class="panel-body stack" style="gap: 10px;">
           <span class="metric-label">Connect</span>
           <h3 class="h4">Strava</h3>
           <p class="caption" style="margin: 0;">
-            OAuth + backfill. Pulls activities and Zwift rides synced to Strava.
+            OAuth + paginated backfill. Walks back to your account creation, deduplicating against
+            anything already in your library. Throttled to stay under Strava's 100 req / 15 min
+            and 1000 / day limits — long histories continue overnight via cron.
           </p>
-          <p class="caption" style="margin: 0;">
-            <strong>Today:</strong> last 90 days. Full all-time backfill ships with the next API
-            release.
-          </p>
-          <div class="row" style="gap: 8px; margin-top: 4px;">
-            <a class="btn btn-primary btn-sm" href="/api/v1/auth/strava/start">Connect</a>
-            <button id="strava-import" type="button" class="btn btn-secondary btn-sm">Backfill 90d</button>
+          <div class="row" style="gap: 8px; margin-top: 4px; flex-wrap: wrap;">
+            <a class="btn btn-secondary btn-sm" href="/api/v1/auth/strava/start">Connect</a>
+            <button data-import-strava="all" type="button" class="btn btn-primary btn-sm">
+              Backfill all
+            </button>
+            <button data-import-strava="90d" type="button" class="btn btn-secondary btn-sm">
+              Last 90 days
+            </button>
           </div>
         </div>
       </div>
@@ -39,10 +42,16 @@ import Icon from '../components/Icon.astro';
           <span class="metric-label">Connect</span>
           <h3 class="h4">Garmin Connect</h3>
           <p class="caption" style="margin: 0;">
-            OAuth + push webhooks. Every new activity lands within a minute. Requires Garmin
-            developer-program access.
+            OAuth + push webhooks. Every new activity lands within a minute. Backfill walks Garmin
+            Wellness summaries in 24-hour windows backwards. Requires Garmin developer-program
+            access.
           </p>
-          <a class="btn btn-primary btn-sm" href="/api/v1/auth/garmin/start" style="align-self: flex-start;">Connect</a>
+          <div class="row" style="gap: 8px; margin-top: 4px; flex-wrap: wrap;">
+            <a class="btn btn-secondary btn-sm" href="/api/v1/auth/garmin/start">Connect</a>
+            <button data-import-garmin="all" type="button" class="btn btn-primary btn-sm">
+              Backfill all
+            </button>
+          </div>
         </div>
       </div>
 
@@ -51,12 +60,20 @@ import Icon from '../components/Icon.astro';
           <span class="metric-label">Bulk archive</span>
           <h3 class="h4">Drop a full export</h3>
           <p class="caption" style="margin: 0;">
-            Works for the standard export archives from every major platform — Garmin, Strava,
-            TrainingPeaks, Wahoo, Coros, Polar Flow. Your browser unpacks the .zip locally and
-            uploads each session to the parse pipeline.
+            For everything else — TrainingPeaks, Wahoo, Coros, Polar Flow, Apple Health, Suunto,
+            Zwift. Your browser unpacks the .zip locally and pushes each session to the parse
+            pipeline.
           </p>
         </div>
       </div>
+    </section>
+
+    <section class="stack" style="gap: 8px;">
+      <div class="row" style="gap: 12px;">
+        <h3 class="h3" style="font-size: 18px;">Backfill jobs</h3>
+        <span class="row-end caption" id="jobs-summary"></span>
+      </div>
+      <ul id="jobs-list" class="stack" style="list-style: none; margin: 0; padding: 0; gap: 8px;"></ul>
     </section>
 
     <section class="panel">
@@ -438,29 +455,129 @@ import Icon from '../components/Icon.astro';
       .replace(/"/g, '&quot;');
   }
 
-  // ---------------- Strava 90d backfill (existing endpoint) ----------------
+  // ---------------- Strava + Garmin backfill jobs ----------------
 
-  document.getElementById('strava-import')?.addEventListener('click', async (ev) => {
-    const btn = ev.currentTarget as HTMLButtonElement;
-    btn.disabled = true;
+  document.querySelectorAll<HTMLButtonElement>('[data-import-strava]').forEach((btn) => {
+    btn.addEventListener('click', () => kickJob('strava', btn.dataset.importStrava ?? 'all', btn));
+  });
+  document.querySelectorAll<HTMLButtonElement>('[data-import-garmin]').forEach((btn) => {
+    btn.addEventListener('click', () => kickJob('garmin', btn.dataset.importGarmin ?? 'all', btn));
+  });
+
+  async function kickJob(provider: 'strava' | 'garmin', scope: string, btn: HTMLButtonElement) {
     const original = btn.textContent;
-    btn.textContent = 'Backfilling…';
+    btn.disabled = true;
+    btn.textContent = 'Starting…';
     try {
-      const r = await fetch('/api/v1/me/import/strava', {
+      const r = await fetch(`/api/v1/me/import/${provider}?scope=${encodeURIComponent(scope)}`, {
         method: 'POST',
         credentials: 'include',
       });
-      if (r.ok) {
-        const body = (await r.json()) as { queued: number };
-        btn.textContent = `Queued ${body.queued}`;
-      } else {
-        btn.textContent = `Failed (${r.status})`;
+      if (!r.ok) {
+        const detail = await r.text().catch(() => '');
+        btn.textContent = `Failed · ${r.status}`;
+        console.error(detail);
+        return;
       }
+      btn.textContent = 'Running…';
+      await refreshJobs();
     } finally {
       setTimeout(() => {
         btn.disabled = false;
         btn.textContent = original ?? 'Backfill';
-      }, 4000);
+      }, 2500);
     }
+  }
+
+  type JobRow = {
+    id: string;
+    provider: 'strava' | 'garmin';
+    scope: string;
+    status: 'running' | 'paused' | 'done' | 'error';
+    cursor: number | null;
+    stopAt: number | null;
+    totalSeen: number;
+    succeeded: number;
+    duplicates: number;
+    failed: number;
+    lastError: string | null;
+    updatedAt: number;
+    createdAt: number;
+  };
+
+  const jobsList = document.getElementById('jobs-list')!;
+  const jobsSummary = document.getElementById('jobs-summary')!;
+
+  async function refreshJobs() {
+    const r = await fetch('/api/v1/me/imports', { credentials: 'include' });
+    if (!r.ok) {
+      jobsList.innerHTML =
+        '<li class="empty">Sign in to see your backfill jobs.</li>';
+      return;
+    }
+    const body = (await r.json()) as { items: JobRow[] };
+    if (body.items.length === 0) {
+      jobsList.innerHTML =
+        '<li class="empty">No backfill jobs yet. Hit "Backfill all" on Strava or Garmin to start one.</li>';
+      jobsSummary.textContent = '';
+      return;
+    }
+    const running = body.items.filter((j) => j.status === 'running').length;
+    jobsSummary.textContent = `${body.items.length} total · ${running} running`;
+    jobsList.innerHTML = body.items.map(renderJob).join('');
+  }
+
+  function renderJob(j: JobRow): string {
+    const chipClass =
+      j.status === 'running'
+        ? 'chip-pace'
+        : j.status === 'done'
+          ? 'chip-success'
+          : j.status === 'error'
+            ? 'chip-warning'
+            : 'chip-muted';
+    const oldest = j.cursor ? new Date(j.cursor * 1000).toISOString().slice(0, 10) : '—';
+    const updated = new Date(j.updatedAt * 1000).toLocaleString();
+    return `
+      <li class="panel">
+        <div style="padding: 12px 16px; display: grid; grid-template-columns: auto 1fr auto auto auto auto; gap: 12px; align-items: center;">
+          <span class="chip ${chipClass}">${escape(j.status)}</span>
+          <div>
+            <strong style="font-size: 14px;">${escape(j.provider)} · ${escape(j.scope)}</strong>
+            <p class="caption" style="margin: 2px 0 0; font-family: var(--font-mono);">
+              cursor at ${escape(oldest)} · updated ${escape(updated)}
+              ${j.lastError ? ` · error: ${escape(j.lastError)}` : ''}
+            </p>
+          </div>
+          <span class="metric-sm">${j.succeeded}<span class="metric-label" style="margin-left: 4px;">ok</span></span>
+          <span class="metric-sm">${j.duplicates}<span class="metric-label" style="margin-left: 4px;">dupe</span></span>
+          <span class="metric-sm">${j.failed}<span class="metric-label" style="margin-left: 4px;">fail</span></span>
+          ${
+            j.status === 'running'
+              ? `<button data-cancel="${escape(j.id)}" class="btn btn-ghost btn-sm" style="color: var(--danger);">Pause</button>`
+              : ''
+          }
+        </div>
+      </li>
+    `;
+  }
+
+  jobsList.addEventListener('click', async (ev) => {
+    const t = ev.target as HTMLElement;
+    const id = t.dataset.cancel;
+    if (!id) return;
+    await fetch(`/api/v1/me/imports/${id}/cancel`, { method: 'POST', credentials: 'include' });
+    await refreshJobs();
   });
+
+  // Poll while any job is running.
+  async function pollLoop() {
+    await refreshJobs();
+    const list = await fetch('/api/v1/me/imports', { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .catch(() => ({ items: [] as JobRow[] }));
+    const anyRunning = (list as { items: JobRow[] }).items.some((j) => j.status === 'running');
+    setTimeout(pollLoop, anyRunning ? 5000 : 30_000);
+  }
+  void pollLoop();
 </script>
