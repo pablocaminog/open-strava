@@ -4,24 +4,63 @@ import Icon from '../components/Icon.astro';
 ---
 
 <Shell title="Workouts" active="workouts">
-  <div class="stack" style="gap: 20px;">
-    <header style="display: flex; align-items: flex-start; gap: 16px;">
-      <div style="flex: 1;">
-        <h1 class="h1" style="font-size: 28px;">Workouts</h1>
-        <p class="muted body-sm" style="margin-top: 4px;">
-          Build a structured session and reuse it on the calendar. Export to FIT for your Garmin or
-          .zwo for Zwift.
-        </p>
-      </div>
-      <button id="prefill-btn" type="button" class="btn btn-secondary btn-sm">
-        Prefill 60 starter workouts
-      </button>
+  <div class="stack" style="gap: 24px;">
+    <header>
+      <h1 class="h1" style="font-size: 28px;">Workouts</h1>
+      <p class="muted body-sm" style="margin-top: 4px;">
+        Pick a session from the library, or build your own. Schedule on the calendar; export to
+        FIT for Garmin or .zwo for Zwift.
+      </p>
     </header>
-    <p id="prefill-status" class="caption" aria-live="polite"></p>
+
+    <section class="stack" style="gap: 12px;">
+      <div class="row" style="gap: 12px; flex-wrap: wrap;">
+        <h2 class="h3" style="font-size: 18px;">Library</h2>
+        <span id="library-count" class="metric-label row-end"></span>
+      </div>
+
+      <div class="panel">
+        <div class="panel-body stack" style="gap: 12px;">
+          <div class="row" style="gap: 16px; flex-wrap: wrap;">
+            <div class="row" style="gap: 8px;">
+              <span class="metric-label" style="margin-right: 4px;">Sport</span>
+              <div class="segmented" id="filter-sport">
+                <button type="button" data-v="all" class="on">All</button>
+                <button type="button" data-v="cycling">Cycling</button>
+                <button type="button" data-v="running">Running</button>
+                <button type="button" data-v="swimming">Swimming</button>
+              </div>
+            </div>
+            <div class="row" style="gap: 8px;">
+              <span class="metric-label" style="margin-right: 4px;">Duration</span>
+              <div class="segmented" id="filter-duration">
+                <button type="button" data-v="all" class="on">Any</button>
+                <button type="button" data-v="short">&lt; 30 min</button>
+                <button type="button" data-v="mid">30 – 60 min</button>
+                <button type="button" data-v="long">&gt; 60 min</button>
+              </div>
+            </div>
+            <div class="row" style="gap: 8px;">
+              <span class="metric-label" style="margin-right: 4px;">Intensity</span>
+              <div class="segmented" id="filter-zone">
+                <button type="button" data-v="all" class="on">Any</button>
+                <button type="button" data-v="1">Z1</button>
+                <button type="button" data-v="2">Z2</button>
+                <button type="button" data-v="3">Z3</button>
+                <button type="button" data-v="4">Z4</button>
+                <button type="button" data-v="5">Z5</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <ul id="library-list" class="grid-tiles" style="grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; list-style: none; margin: 0; padding: 0;"></ul>
+    </section>
 
     <details class="panel">
       <summary style="cursor: pointer; padding: 14px 20px; display: flex; align-items: center; gap: 8px; font-weight: 500;">
-        <Icon name="plus" size={16} /> New workout
+        <Icon name="plus" size={16} /> New custom workout
       </summary>
       <form id="new-workout" class="panel-body stack" style="gap: 14px;">
         <div class="grid-tiles grid-cols-2" style="gap: 14px;">
@@ -53,12 +92,19 @@ import Icon from '../components/Icon.astro';
       </form>
     </details>
 
-    <ul id="workout-list" class="stack" style="list-style: none; margin: 0; padding: 0; gap: 10px;"></ul>
+    <section class="stack" style="gap: 12px;">
+      <h2 class="h3" style="font-size: 18px;">Saved workouts</h2>
+      <ul id="workout-list" class="stack" style="list-style: none; margin: 0; padding: 0; gap: 10px;"></ul>
+    </section>
   </div>
 </Shell>
 
 <script>
-  import { WORKOUT_LIBRARY } from '../data/workout-library.ts';
+  import {
+    WORKOUT_LIBRARY,
+    type WorkoutDef,
+    type WorkoutStepDef,
+  } from '../data/workout-library.ts';
 
   type StepKind = 'warmup' | 'work' | 'recover' | 'cooldown' | 'rest';
   interface Step {
@@ -67,6 +113,194 @@ import Icon from '../components/Icon.astro';
     target?: { type: 'ftp_pct' | 'hr_pct'; low: number; high: number };
   }
 
+  // ------------- duration + zone helpers ----------------
+  // Pace assumptions for distance-based steps (median, sport-relative).
+  const PACE_M_PER_S: Record<WorkoutDef['sport'], number> = {
+    cycling: 8.33, // ~30 km/h
+    running: 3.33, // ~12 km/h, 5:00/km
+    swimming: 1.4, // ~1:11/100m
+  };
+
+  function stepDurationSec(s: WorkoutStepDef, sport: WorkoutDef['sport']): number {
+    if (s.children && s.children.length > 0) {
+      const inner = s.children.reduce((a, c) => a + stepDurationSec(c, sport), 0);
+      return inner * Math.max(1, s.repeat ?? 1);
+    }
+    if (s.durationSec) return s.durationSec * Math.max(1, s.repeat ?? 1);
+    if (s.distM) return (s.distM / PACE_M_PER_S[sport]) * Math.max(1, s.repeat ?? 1);
+    return 0;
+  }
+
+  function workoutDurationSec(w: WorkoutDef): number {
+    return w.steps.reduce((a, s) => a + stepDurationSec(s, w.sport), 0);
+  }
+
+  function zoneOfTarget(t: WorkoutStepDef['target']): number {
+    if (!t) return 0;
+    const v = t.high;
+    if (t.type === 'ftp_pct') {
+      if (v < 66) return 1;
+      if (v < 81) return 2;
+      if (v < 91) return 3;
+      if (v < 106) return 4;
+      return 5;
+    }
+    // hr_pct (and pace fallback)
+    if (v < 73) return 1;
+    if (v < 83) return 2;
+    if (v < 88) return 3;
+    if (v < 93) return 4;
+    return 5;
+  }
+
+  function peakZone(steps: WorkoutStepDef[]): number {
+    let max = 0;
+    const visit = (list: WorkoutStepDef[]) => {
+      for (const s of list) {
+        if (s.kind !== 'recover' && s.kind !== 'rest' && s.target) {
+          const z = zoneOfTarget(s.target);
+          if (z > max) max = z;
+        }
+        if (s.children) visit(s.children);
+      }
+    };
+    visit(steps);
+    return max;
+  }
+
+  function durationBucket(sec: number): 'short' | 'mid' | 'long' {
+    if (sec < 30 * 60) return 'short';
+    if (sec <= 60 * 60) return 'mid';
+    return 'long';
+  }
+
+  // ------------- library state ----------------
+  type LibEntry = WorkoutDef & {
+    durationSec: number;
+    bucket: 'short' | 'mid' | 'long';
+    zone: number;
+  };
+  const LIB: LibEntry[] = WORKOUT_LIBRARY.map((w) => {
+    const durationSec = workoutDurationSec(w);
+    return {
+      ...w,
+      durationSec,
+      bucket: durationBucket(durationSec),
+      zone: peakZone(w.steps),
+    };
+  });
+
+  const filters = { sport: 'all', duration: 'all', zone: 'all' };
+  const libraryList = document.getElementById('library-list')!;
+  const libraryCount = document.getElementById('library-count')!;
+
+  function wireFilter(elId: string, key: keyof typeof filters) {
+    const el = document.getElementById(elId)!;
+    el.addEventListener('click', (ev) => {
+      const t = ev.target as HTMLElement;
+      const v = t.dataset.v;
+      if (!v) return;
+      filters[key] = v;
+      el.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === t));
+      renderLibrary();
+    });
+  }
+  wireFilter('filter-sport', 'sport');
+  wireFilter('filter-duration', 'duration');
+  wireFilter('filter-zone', 'zone');
+
+  function renderLibrary() {
+    const matches = LIB.filter((w) => {
+      if (filters.sport !== 'all' && w.sport !== filters.sport) return false;
+      if (filters.duration !== 'all' && w.bucket !== filters.duration) return false;
+      if (filters.zone !== 'all' && String(w.zone) !== filters.zone) return false;
+      return true;
+    });
+    libraryCount.textContent = `${matches.length} of ${LIB.length}`;
+    if (matches.length === 0) {
+      libraryList.innerHTML = `<li class="empty" style="grid-column: 1 / -1;">No sessions match those filters. Try widening one.</li>`;
+      return;
+    }
+    libraryList.innerHTML = matches
+      .map((w) => {
+        const idx = LIB.indexOf(w);
+        const min = Math.round(w.durationSec / 60);
+        const bucketLabel = w.bucket === 'short' ? '< 30 min' : w.bucket === 'mid' ? '30 – 60 min' : '> 60 min';
+        return `
+          <li class="panel" style="display: flex; flex-direction: column; gap: 0;">
+            <div style="padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; flex: 1;">
+              <div class="row" style="gap: 8px; flex-wrap: wrap;">
+                <span class="chip chip-muted">${escape(w.sport)}</span>
+                <span class="chip chip-soft">Z${w.zone}</span>
+                <span class="metric-label row-end">${min} min</span>
+              </div>
+              <strong style="font-size: 15px;">${escape(w.name)}</strong>
+              <p class="caption" style="margin: 0;">${escape(w.description)}</p>
+              <p class="caption" style="margin: 0; font-family: var(--font-mono);">${escape(bucketLabel)}</p>
+            </div>
+            <div class="row" style="padding: 8px 12px; gap: 6px; border-top: 1px solid var(--border);">
+              <button data-add="${idx}" type="button" class="btn btn-primary btn-sm">Add to my workouts</button>
+              <button data-schedule="${idx}" type="button" class="btn btn-secondary btn-sm row-end">Schedule</button>
+            </div>
+          </li>
+        `;
+      })
+      .join('');
+  }
+  renderLibrary();
+
+  libraryList.addEventListener('click', async (ev) => {
+    const t = ev.target as HTMLButtonElement;
+    const addIdx = t.dataset.add;
+    const schedIdx = t.dataset.schedule;
+    const idx = addIdx ?? schedIdx;
+    if (idx == null) return;
+    const w = LIB[Number(idx)]!;
+
+    if (schedIdx != null) {
+      // Save first, then jump to calendar with the new workout id.
+      t.disabled = true;
+      const id = await postWorkout(w);
+      if (id) window.location.href = `/calendar?workout=${id}`;
+      else t.disabled = false;
+      return;
+    }
+
+    t.disabled = true;
+    const original = t.textContent;
+    t.textContent = 'Adding…';
+    const id = await postWorkout(w);
+    if (id) {
+      t.textContent = 'Added ✓';
+      await loadList();
+    } else {
+      t.textContent = original ?? 'Add';
+      t.disabled = false;
+    }
+  });
+
+  async function postWorkout(w: WorkoutDef): Promise<string | null> {
+    try {
+      const r = await fetch('/api/v1/workouts', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: w.name,
+          description: w.description,
+          sport: w.sport,
+          steps: w.steps,
+        }),
+      });
+      if (!r.ok) return null;
+      const body = (await r.json()) as { id: string };
+      return body.id;
+    } catch {
+      return null;
+    }
+  }
+
+  // ------------- custom builder + saved list (existing) ----------------
   const stepList = document.getElementById('step-list')!;
   const workoutList = document.getElementById('workout-list')!;
   const status = document.getElementById('save-status')!;
@@ -78,39 +312,6 @@ import Icon from '../components/Icon.astro';
   void loadList();
 
   addStepBtn.addEventListener('click', () => addStep());
-
-  const prefillBtn = document.getElementById('prefill-btn') as HTMLButtonElement | null;
-  const prefillStatus = document.getElementById('prefill-status')!;
-  prefillBtn?.addEventListener('click', async () => {
-    if (!confirm(`Add ${WORKOUT_LIBRARY.length} starter workouts to your library?`)) return;
-    prefillBtn.disabled = true;
-    let ok = 0;
-    let fail = 0;
-    for (let i = 0; i < WORKOUT_LIBRARY.length; i++) {
-      const w = WORKOUT_LIBRARY[i]!;
-      prefillStatus.textContent = `Seeding ${i + 1}/${WORKOUT_LIBRARY.length}: ${w.name}…`;
-      try {
-        const r = await fetch('/api/v1/workouts', {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: w.name,
-            description: w.description,
-            sport: w.sport,
-            steps: w.steps,
-          }),
-        });
-        if (r.ok) ok++;
-        else fail++;
-      } catch {
-        fail++;
-      }
-    }
-    prefillStatus.textContent = `Done · ${ok} added${fail > 0 ? ` · ${fail} failed` : ''}.`;
-    prefillBtn.disabled = false;
-    await loadList();
-  });
 
   function addStep() {
     steps.push({ kind: 'work', durationSec: 300 });
@@ -208,7 +409,10 @@ import Icon from '../components/Icon.astro';
 
   async function loadList() {
     const r = await fetch('/api/v1/workouts', { credentials: 'include' });
-    if (!r.ok) return;
+    if (!r.ok) {
+      workoutList.innerHTML = `<li class="empty">Sign in to save workouts.</li>`;
+      return;
+    }
     const body = (await r.json()) as {
       items: {
         id: string;
@@ -220,7 +424,7 @@ import Icon from '../components/Icon.astro';
     };
     workoutList.innerHTML = '';
     if (body.items.length === 0) {
-      workoutList.innerHTML = `<li class="empty">No workouts yet.</li>`;
+      workoutList.innerHTML = `<li class="empty">No saved workouts yet. Add one from the library above.</li>`;
       return;
     }
     for (const w of body.items) {
