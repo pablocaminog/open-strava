@@ -5,13 +5,19 @@ import Icon from '../components/Icon.astro';
 
 <Shell title="Workouts" active="workouts">
   <div class="stack" style="gap: 20px;">
-    <header>
-      <h1 class="h1" style="font-size: 28px;">Workouts</h1>
-      <p class="muted body-sm" style="margin-top: 4px;">
-        Build a structured session and reuse it on the calendar. Export to FIT for your Garmin or
-        .zwo for Zwift.
-      </p>
+    <header style="display: flex; align-items: flex-start; gap: 16px;">
+      <div style="flex: 1;">
+        <h1 class="h1" style="font-size: 28px;">Workouts</h1>
+        <p class="muted body-sm" style="margin-top: 4px;">
+          Build a structured session and reuse it on the calendar. Export to FIT for your Garmin or
+          .zwo for Zwift.
+        </p>
+      </div>
+      <button id="prefill-btn" type="button" class="btn btn-secondary btn-sm">
+        Prefill 60 starter workouts
+      </button>
     </header>
+    <p id="prefill-status" class="caption" aria-live="polite"></p>
 
     <details class="panel">
       <summary style="cursor: pointer; padding: 14px 20px; display: flex; align-items: center; gap: 8px; font-weight: 500;">
@@ -52,6 +58,8 @@ import Icon from '../components/Icon.astro';
 </Shell>
 
 <script>
+  import { WORKOUT_LIBRARY } from '../data/workout-library.ts';
+
   type StepKind = 'warmup' | 'work' | 'recover' | 'cooldown' | 'rest';
   interface Step {
     kind: StepKind;
@@ -70,6 +78,39 @@ import Icon from '../components/Icon.astro';
   void loadList();
 
   addStepBtn.addEventListener('click', () => addStep());
+
+  const prefillBtn = document.getElementById('prefill-btn') as HTMLButtonElement | null;
+  const prefillStatus = document.getElementById('prefill-status')!;
+  prefillBtn?.addEventListener('click', async () => {
+    if (!confirm(`Add ${WORKOUT_LIBRARY.length} starter workouts to your library?`)) return;
+    prefillBtn.disabled = true;
+    let ok = 0;
+    let fail = 0;
+    for (let i = 0; i < WORKOUT_LIBRARY.length; i++) {
+      const w = WORKOUT_LIBRARY[i]!;
+      prefillStatus.textContent = `Seeding ${i + 1}/${WORKOUT_LIBRARY.length}: ${w.name}…`;
+      try {
+        const r = await fetch('/api/v1/workouts', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: w.name,
+            description: w.description,
+            sport: w.sport,
+            steps: w.steps,
+          }),
+        });
+        if (r.ok) ok++;
+        else fail++;
+      } catch {
+        fail++;
+      }
+    }
+    prefillStatus.textContent = `Done · ${ok} added${fail > 0 ? ` · ${fail} failed` : ''}.`;
+    prefillBtn.disabled = false;
+    await loadList();
+  });
 
   function addStep() {
     steps.push({ kind: 'work', durationSec: 300 });
