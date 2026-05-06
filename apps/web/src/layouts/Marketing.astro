@@ -5,11 +5,12 @@ import Wordmark from '../components/Wordmark.astro';
 interface Props {
   title?: string;
   description?: string;
+  jsonLd?: Record<string, unknown> | Record<string, unknown>[];
 }
-const { title, description } = Astro.props;
+const { title, description, jsonLd } = Astro.props;
 ---
 
-<Base title={title} description={description}>
+<Base title={title} description={description} jsonLd={jsonLd}>
   <div class="marketing-shell">
     <header class="marketing-nav">
       <div class="marketing-nav-inner">
@@ -18,8 +19,10 @@ const { title, description } = Astro.props;
         </a>
         <span class="marketing-nav-spacer"></span>
         <nav>
+          <a href="#compare">Compare</a>
+          <a href="#features">Features</a>
+          <a href="#faq">FAQ</a>
           <a href="https://github.com/pablocaminog/pacelore">Source</a>
-          <a href="/feed">Feed</a>
           <a href="/login">Sign in</a>
         </nav>
         <a class="btn btn-primary btn-sm" href="/register">Get started</a>

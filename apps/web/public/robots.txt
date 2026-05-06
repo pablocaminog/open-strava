@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+
+# Auth-only surfaces — let crawlers know not to index empty shells.
+Disallow: /feed
+Disallow: /dashboard
+Disallow: /calendar
+Disallow: /workouts
+Disallow: /upload
+Disallow: /settings
+Disallow: /activity/
+Disallow: /athletes/
+Disallow: /segments/
+
+Sitemap: https://pacelore.com/sitemap.xml
