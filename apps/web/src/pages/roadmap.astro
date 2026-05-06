@@ -1,0 +1,390 @@
+---
+import Shell from '../layouts/Shell.astro';
+import Icon from '../components/Icon.astro';
+---
+
+<Shell title="Roadmap" active="roadmap">
+  <div class="stack" style="gap: 24px;">
+    <header style="display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap;">
+      <div style="flex: 1; min-width: 280px;">
+        <h1 class="h1" style="font-size: 28px;">Roadmap</h1>
+        <p class="muted body-sm" style="margin-top: 4px; max-width: 70ch;">
+          What we've shipped, what we're building, what's queued. Submit anything you're missing
+          and upvote the ones you care about — votes drive priority. Each vote shows who and when.
+        </p>
+      </div>
+      <button id="new-btn" type="button" class="btn btn-primary">
+        <Icon name="plus" size={14} /> Submit a feature
+      </button>
+    </header>
+
+    <div id="status" class="caption" aria-live="polite"></div>
+
+    <details id="new-form" class="panel" hidden>
+      <summary style="cursor: pointer; padding: 14px 20px; font-weight: 500;">New feature request</summary>
+      <form id="new-roadmap" class="panel-body stack" style="gap: 12px;">
+        <div class="field">
+          <label class="field-label">Title</label>
+          <input class="input" name="title" maxlength="140" required placeholder="What should pacelore do?" />
+        </div>
+        <div class="field">
+          <label class="field-label">Why · context (optional)</label>
+          <textarea
+            class="textarea"
+            name="description"
+            maxlength="2000"
+            placeholder="What problem does this solve? Any links / examples?"
+          ></textarea>
+        </div>
+        <div class="row" style="gap: 8px;">
+          <button class="btn btn-primary" type="submit">Submit</button>
+          <button class="btn btn-ghost" type="button" id="new-cancel">Cancel</button>
+        </div>
+      </form>
+    </details>
+
+    <div id="kanban" class="kanban"></div>
+  </div>
+</Shell>
+
+<style is:global>
+  .kanban {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(260px, 1fr));
+    gap: 16px;
+  }
+  @media (max-width: 1100px) {
+    .kanban {
+      grid-template-columns: repeat(2, minmax(260px, 1fr));
+    }
+  }
+  @media (max-width: 720px) {
+    .kanban {
+      grid-template-columns: 1fr;
+    }
+  }
+  .kanban-col {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 200px;
+  }
+  .kanban-col h2 {
+    margin: 0;
+    font-size: 12px;
+    font-family: var(--font-mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--fg-muted);
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .kanban-col h2 .count {
+    color: var(--fg);
+    font-weight: 600;
+  }
+  .kanban-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: border-color 120ms var(--ease-out);
+  }
+  .kanban-card:hover {
+    border-color: var(--border-strong);
+  }
+  .kanban-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--fg);
+  }
+  .kanban-card-desc {
+    font-size: 13px;
+    color: var(--fg-muted);
+    line-height: 1.45;
+  }
+  .kanban-card-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-subtle);
+  }
+  .vote-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--fg);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 120ms var(--ease-out);
+  }
+  .vote-btn:hover {
+    border-color: var(--pace-500);
+    color: var(--pace-700);
+  }
+  :root[data-theme='dark'] .vote-btn:hover,
+  :root.dark .vote-btn:hover {
+    color: var(--pace-300);
+  }
+  .vote-btn.voted {
+    background: var(--accent-soft);
+    border-color: var(--pace-500);
+    color: var(--pace-700);
+  }
+  :root[data-theme='dark'] .vote-btn.voted,
+  :root.dark .vote-btn.voted {
+    color: var(--pace-300);
+  }
+</style>
+
+<script>
+  type RoadmapItem = {
+    id: string;
+    title: string;
+    description: string | null;
+    status: 'backlog' | 'planned' | 'in_progress' | 'released';
+    releasedAt: number | null;
+    createdBy: string | null;
+    creatorHandle: string | null;
+    creatorName: string | null;
+    sortOrder: number;
+    createdAt: number;
+    updatedAt: number;
+    votes: number;
+    voted: number;
+  };
+
+  type VoterRow = {
+    athleteId: string;
+    handle: string;
+    displayName: string | null;
+    votedAt: number;
+  };
+
+  const COLUMNS: {
+    key: RoadmapItem['status'];
+    label: string;
+    desc: string;
+  }[] = [
+    { key: 'backlog', label: 'Backlog', desc: 'Ideas, vote them up to move them to Planned.' },
+    { key: 'planned', label: 'Planned', desc: 'Committed for an upcoming release.' },
+    { key: 'in_progress', label: 'In progress', desc: 'Actively being built.' },
+    { key: 'released', label: 'Released', desc: 'Shipped — newest first.' },
+  ];
+
+  const status = document.getElementById('status')!;
+  const kanban = document.getElementById('kanban')!;
+  const newBtn = document.getElementById('new-btn')!;
+  const newForm = document.getElementById('new-form') as HTMLDetailsElement;
+  const newCancel = document.getElementById('new-cancel')!;
+  const newSubmit = document.getElementById('new-roadmap') as HTMLFormElement;
+
+  let cache: RoadmapItem[] = [];
+
+  init().catch((err) => {
+    status.textContent = `Couldn't load: ${(err as Error).message}`;
+  });
+
+  async function init() {
+    const me = await fetch('/api/v1/auth/me', { credentials: 'include' });
+    if (!me.ok) {
+      status.innerHTML =
+        'Sign in to view + vote on the roadmap. <a href="/login?next=/roadmap" style="color: var(--fg); text-decoration: underline;">Go to sign in</a>.';
+      kanban.innerHTML = '';
+      return;
+    }
+    await refresh();
+  }
+
+  async function refresh() {
+    const r = await fetch('/api/v1/roadmap', { credentials: 'include' });
+    if (!r.ok) {
+      status.textContent = `Couldn't load roadmap · HTTP ${r.status}`;
+      return;
+    }
+    cache = ((await r.json()) as { items: RoadmapItem[] }).items;
+    render();
+  }
+
+  function render() {
+    status.textContent = `${cache.length} items · ${cache.filter((i) => i.status === 'released').length} shipped · ${cache.filter((i) => i.voted === 1).length} you've voted on`;
+    kanban.innerHTML = COLUMNS.map((col) => {
+      const items = cache
+        .filter((i) => i.status === col.key)
+        // Within a column: sort_order DESC, then votes DESC, then newest first.
+        .sort((a, b) => {
+          if (col.key === 'released') {
+            return (b.releasedAt ?? 0) - (a.releasedAt ?? 0);
+          }
+          if (b.sortOrder !== a.sortOrder) return b.sortOrder - a.sortOrder;
+          if (b.votes !== a.votes) return b.votes - a.votes;
+          return b.createdAt - a.createdAt;
+        });
+      return `
+        <div class="kanban-col">
+          <h2>
+            ${escape(col.label)}
+            <span class="count">${items.length}</span>
+            <span class="row-end" style="font-family: var(--font-mono); font-size: 10px; color: var(--fg-subtle); font-weight: normal;">${escape(col.desc)}</span>
+          </h2>
+          ${items.map(renderCard).join('') ||
+          `<div class="caption" style="padding: 16px 0;">Nothing here yet.</div>`}
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderCard(it: RoadmapItem): string {
+    const submittedBy =
+      it.createdBy
+        ? `submitted by <a href="/athletes/${escape(it.creatorHandle ?? '')}" style="color: inherit; text-decoration: underline;">@${escape(it.creatorHandle ?? '?')}</a>`
+        : 'pacelore team';
+    const when = it.releasedAt
+      ? `shipped ${formatDate(it.releasedAt)}`
+      : `added ${formatDate(it.createdAt)}`;
+    return `
+      <article class="kanban-card" data-id="${escape(it.id)}">
+        <h3 class="kanban-card-title">${escape(it.title)}</h3>
+        ${it.description ? `<p class="kanban-card-desc">${escape(it.description)}</p>` : ''}
+        <div class="kanban-card-meta">
+          <button
+            class="vote-btn ${it.voted ? 'voted' : ''}"
+            data-vote="${escape(it.id)}"
+            title="Click to ${it.voted ? 'remove your vote' : 'upvote'}"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polyline points="18 15 12 9 6 15"/>
+            </svg>
+            ${it.votes}
+          </button>
+          <span>${submittedBy}</span>
+          <span>·</span>
+          <span>${escape(when)}</span>
+          <button class="btn btn-ghost btn-sm" data-voters="${escape(it.id)}" style="padding: 2px 8px; font-size: 11px; margin-left: auto;">
+            ${it.votes > 0 ? 'Who voted →' : ''}
+          </button>
+        </div>
+        <div class="voters" data-voters-list="${escape(it.id)}" hidden></div>
+      </article>
+    `;
+  }
+
+  kanban.addEventListener('click', async (ev) => {
+    const t = ev.target as HTMLElement;
+    const voteBtn = t.closest('[data-vote]') as HTMLElement | null;
+    const votersBtn = t.closest('[data-voters]') as HTMLElement | null;
+    if (voteBtn) {
+      const id = voteBtn.dataset.vote!;
+      const item = cache.find((x) => x.id === id);
+      if (!item) return;
+      const method = item.voted ? 'DELETE' : 'POST';
+      voteBtn.setAttribute('disabled', '');
+      const r = await fetch(`/api/v1/roadmap/${id}/vote`, { method, credentials: 'include' });
+      voteBtn.removeAttribute('disabled');
+      if (r.ok) {
+        // Patch in place so the order doesn't reshuffle aggressively.
+        item.voted = item.voted ? 0 : 1;
+        item.votes += item.voted ? 1 : -1;
+        render();
+      }
+    } else if (votersBtn) {
+      const id = votersBtn.dataset.voters!;
+      const list = document.querySelector<HTMLElement>(`[data-voters-list="${id}"]`);
+      if (!list) return;
+      if (!list.hidden) {
+        list.hidden = true;
+        return;
+      }
+      const r = await fetch(`/api/v1/roadmap/${id}/votes`, { credentials: 'include' });
+      if (!r.ok) return;
+      const body = (await r.json()) as { items: VoterRow[] };
+      list.innerHTML = body.items.length
+        ? body.items
+            .map(
+              (v) => `
+            <div class="row" style="gap: 8px; padding: 4px 0; font-size: 12px; font-family: var(--font-mono);">
+              <a href="/athletes/${escape(v.handle)}" style="color: var(--fg); text-decoration: underline;">@${escape(v.handle)}</a>
+              <span class="row-end caption">${escape(formatDateTime(v.votedAt))}</span>
+            </div>`,
+            )
+            .join('')
+        : '<div class="caption">No votes yet.</div>';
+      list.style.borderTop = '1px solid var(--border)';
+      list.style.paddingTop = '8px';
+      list.style.marginTop = '4px';
+      list.hidden = false;
+    }
+  });
+
+  newBtn.addEventListener('click', () => {
+    newForm.hidden = false;
+    newForm.open = true;
+    newForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  newCancel.addEventListener('click', () => {
+    newForm.open = false;
+    newForm.hidden = true;
+    newSubmit.reset();
+  });
+
+  newSubmit.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(newSubmit);
+    const r = await fetch('/api/v1/roadmap', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: String(fd.get('title') ?? ''),
+        description: String(fd.get('description') ?? ''),
+      }),
+    });
+    if (r.ok) {
+      newSubmit.reset();
+      newForm.open = false;
+      newForm.hidden = true;
+      await refresh();
+    } else {
+      const err = (await r.json().catch(() => ({}))) as { error?: string; message?: string };
+      alert(err.message ?? err.error ?? `HTTP ${r.status}`);
+    }
+  });
+
+  function formatDate(epoch: number): string {
+    return new Date(epoch * 1000).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  }
+  function formatDateTime(epoch: number): string {
+    return new Date(epoch * 1000).toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+  function escape(s: string): string {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+</script>

@@ -27,6 +27,7 @@ import { stravaRoutes } from './routes/strava.js';
 import { garminRoutes } from './routes/garmin.js';
 import { permanenceRoutes } from './routes/permanence.js';
 import { atprotoRoutes } from './routes/atproto.js';
+import { roadmapRoutes } from './routes/roadmap.js';
 import { queueHandler } from './pipeline/index.js';
 import { scheduledHandler } from './scheduled.js';
 import type { Env, IngestJob } from './env.js';
@@ -64,6 +65,7 @@ export function buildApp(): Hono<{ Bindings: Env }> {
   app.route('/api/v1', garminRoutes);
   app.route('/api/v1', permanenceRoutes);
   app.route('/api/v1', atprotoRoutes);
+  app.route('/api/v1', roadmapRoutes);
   app.route('/mcp', mcpRoutes);
 
   app.notFound((c) => c.json({ error: 'not_found', status: 404 }, 404));
