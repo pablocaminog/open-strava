@@ -11,6 +11,17 @@ import type { MiddlewareHandler } from 'astro';
 
 export const onRequest: MiddlewareHandler = async (context, next) => {
   const url = new URL(context.request.url);
+
+  // Canonicalize on the apex — keep cookies bound to a single host. The
+  // session cookie has no Domain attribute, so a visitor who registers
+  // on www.pacelore.com and later navigates to pacelore.com would
+  // otherwise look unauthenticated.
+  if (url.hostname === 'www.pacelore.com') {
+    const dest = new URL(url.toString());
+    dest.hostname = 'pacelore.com';
+    return Response.redirect(dest.toString(), 301);
+  }
+
   if (!url.pathname.startsWith('/api/') && !url.pathname.startsWith('/mcp')) {
     return next();
   }

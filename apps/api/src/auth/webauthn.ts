@@ -25,12 +25,22 @@ import { uuidv7 } from '../util/uuid.js';
 export interface RpConfig {
   rpId: string;
   rpName: string;
-  origin: string;
+  /** Accepted origins. Includes the configured APP_ORIGIN plus the
+   *  `www.` subdomain so visitors on either host validate against the
+   *  same rpId. SimpleWebAuthn accepts an array for multi-origin RPs. */
+  origin: string[];
 }
 
 export function rpFromOrigin(origin: string): RpConfig {
   const u = new URL(origin);
-  return { rpId: u.hostname, rpName: 'pacelore', origin };
+  const apex = `${u.protocol}//${u.hostname}`;
+  const wwwHost = u.hostname.startsWith('www.') ? u.hostname : `www.${u.hostname}`;
+  const wwwOrigin = `${u.protocol}//${wwwHost}`;
+  return {
+    rpId: u.hostname.replace(/^www\./, ''),
+    rpName: 'pacelore',
+    origin: Array.from(new Set([apex, wwwOrigin])),
+  };
 }
 
 const CHALLENGE_TTL_SECONDS = 5 * 60;
