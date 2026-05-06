@@ -116,7 +116,15 @@ import Icon from '../components/Icon.astro';
     </section>
 
     <section class="stack" style="gap: 8px;">
-      <h3 class="h3" style="font-size: 16px;">Recent</h3>
+      <div class="row" style="gap: 12px;">
+        <h3 class="h3" style="font-size: 16px;">Archive jobs</h3>
+        <span class="row-end caption" id="archives-summary"></span>
+      </div>
+      <ul id="archives-list" class="stack" style="list-style: none; margin: 0; padding: 0; gap: 8px;"></ul>
+    </section>
+
+    <section class="stack" style="gap: 8px;">
+      <h3 class="h3" style="font-size: 16px;">Recent uploads</h3>
       <ul id="results" class="stack" style="list-style: none; margin: 0; padding: 0; gap: 6px; max-height: 480px; overflow-y: auto;" aria-live="polite"></ul>
     </section>
 
@@ -297,27 +305,38 @@ import Icon from '../components/Icon.astro';
   async function expand(f: File): Promise<WorkItem[]> {
     const lname = f.name.toLowerCase();
     if (lname.endsWith('.zip')) {
-      try {
-        const JSZip = await loadJSZip();
-        const zip = await JSZip.loadAsync(await f.arrayBuffer());
-        const out: WorkItem[] = [];
-        const entries = Object.values(zip.files) as Array<{
-          name: string;
-          dir: boolean;
-          async: (t: 'arraybuffer') => Promise<ArrayBuffer>;
-        }>;
-        for (const entry of entries) {
-          if (entry.dir) continue;
-          const inner = await expandRaw(entry.name, await entry.async('arraybuffer'));
-          for (const w of inner) out.push(w);
-        }
-        return out;
-      } catch (err) {
-        console.error('zip parse failed', f.name, err);
-        return [];
-      }
+      // .zip → server-side. Browser uploads the archive to R2 once,
+      // queue worker unpacks and ingests asynchronously.
+      await uploadArchive(f);
+      return [];
     }
     return expandRaw(f.name, await f.arrayBuffer());
+  }
+
+  async function uploadArchive(f: File): Promise<void> {
+    const li = appendRow(f.name);
+    renderRow(li, f.name, 'ok', `${(f.size / 1_000_000).toFixed(1)} MB · uploading`);
+    try {
+      const fd = new FormData();
+      fd.append('file', f, f.name);
+      const r = await fetch('/api/v1/me/import/archive', {
+        method: 'POST',
+        credentials: 'include',
+        body: fd,
+      });
+      if (!r.ok) {
+        stats.fail++;
+        renderRow(li, f.name, 'fail', `archive upload HTTP ${r.status}`);
+        return;
+      }
+      const body = (await r.json()) as { id: string };
+      renderRow(li, f.name, 'ok', `archive queued · job ${body.id.slice(0, 8)}…`);
+      // Surface in the archive jobs list below.
+      void refreshArchives();
+    } catch (err) {
+      stats.fail++;
+      renderRow(li, f.name, 'fail', (err as Error).message);
+    }
   }
 
   async function expandRaw(name: string, bytes: ArrayBuffer): Promise<WorkItem[]> {
@@ -454,6 +473,79 @@ import Icon from '../components/Icon.astro';
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
   }
+
+  // ---------------- Archive jobs ----------------
+
+  type ArchiveJobRow = {
+    id: string;
+    filename: string;
+    sizeBytes: number;
+    status: 'queued' | 'running' | 'done' | 'error';
+    totalFiles: number;
+    succeeded: number;
+    duplicates: number;
+    failed: number;
+    lastError: string | null;
+    createdAt: string;
+    updatedAt: string;
+    completedAt: string | null;
+  };
+
+  const archivesList = document.getElementById('archives-list')!;
+  const archivesSummary = document.getElementById('archives-summary')!;
+
+  async function refreshArchives() {
+    const r = await fetch('/api/v1/me/import/archives', { credentials: 'include' });
+    if (!r.ok) {
+      archivesList.innerHTML = '';
+      archivesSummary.textContent = '';
+      return;
+    }
+    const body = (await r.json()) as { items: ArchiveJobRow[] };
+    if (body.items.length === 0) {
+      archivesList.innerHTML =
+        '<li class="empty">No archive uploads yet — drop a .zip from your Garmin / Strava export.</li>';
+      archivesSummary.textContent = '';
+      return;
+    }
+    const running = body.items.filter(
+      (j) => j.status === 'running' || j.status === 'queued',
+    ).length;
+    archivesSummary.textContent = `${body.items.length} total · ${running} active`;
+    archivesList.innerHTML = body.items.map(renderArchiveRow).join('');
+  }
+
+  function renderArchiveRow(j: ArchiveJobRow): string {
+    const chip =
+      j.status === 'done'
+        ? 'chip-success'
+        : j.status === 'error'
+          ? 'chip-warning'
+          : j.status === 'running'
+            ? 'chip-pace'
+            : 'chip-muted';
+    const sizeMb = (j.sizeBytes / 1_000_000).toFixed(1);
+    return `
+      <li class="panel">
+        <div style="padding: 10px 16px; display: grid; grid-template-columns: auto 1fr auto auto auto auto; gap: 12px; align-items: center;">
+          <span class="chip ${chip}">${j.status}</span>
+          <div>
+            <strong style="font-size: 13px;">${escape(j.filename)}</strong>
+            <p class="caption" style="margin: 2px 0 0; font-family: var(--font-mono);">
+              ${sizeMb} MB · ${j.totalFiles} files seen · updated ${escape(j.updatedAt)}
+              ${j.lastError ? ` · err: ${escape(j.lastError)}` : ''}
+            </p>
+          </div>
+          <span class="metric-sm">${j.succeeded}<span class="metric-label" style="margin-left: 4px;">ok</span></span>
+          <span class="metric-sm">${j.duplicates}<span class="metric-label" style="margin-left: 4px;">dupe</span></span>
+          <span class="metric-sm">${j.failed}<span class="metric-label" style="margin-left: 4px;">fail</span></span>
+        </div>
+      </li>
+    `;
+  }
+
+  setInterval(() => void refreshArchives(), 8000);
+  void refreshArchives();
 
   // ---------------- Strava + Garmin backfill jobs ----------------
 

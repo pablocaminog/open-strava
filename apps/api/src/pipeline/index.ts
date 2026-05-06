@@ -7,10 +7,11 @@
  * the entire batch, which is acceptable for our small batches.
  */
 
-import type { Env, IngestJob } from '../env.js';
+import type { Env, IngestJob, QueueJob, ActivityIngestJob, ArchiveProcessJob } from '../env.js';
 import { parseRaw } from './parse.js';
 import { computeMetrics, type AthleteThresholds } from './metrics.js';
 import { persistActivity } from './persist.js';
+import { processArchiveJob } from './archive.js';
 
 export async function processIngestJob(env: Env, job: IngestJob): Promise<void> {
   const obj = await env.RAW_BUCKET.get(job.rawR2Path);
@@ -44,14 +45,23 @@ async function loadAthleteThresholds(env: Env, userId: string): Promise<AthleteT
   return out;
 }
 
-export async function queueHandler(batch: MessageBatch<IngestJob>, env: Env): Promise<void> {
+export async function queueHandler(batch: MessageBatch<QueueJob>, env: Env): Promise<void> {
   for (const msg of batch.messages) {
     try {
-      await processIngestJob(env, msg.body);
+      const body = msg.body;
+      if (isArchiveJob(body)) {
+        await processArchiveJob(env, body);
+      } else {
+        await processIngestJob(env, body as ActivityIngestJob);
+      }
       msg.ack();
     } catch (err) {
-      console.error('ingest job failed', { id: msg.body.activityId, err });
+      console.error('queue job failed', err);
       msg.retry();
     }
   }
+}
+
+function isArchiveJob(body: QueueJob): body is ArchiveProcessJob {
+  return (body as { kind?: string }).kind === 'archive';
 }

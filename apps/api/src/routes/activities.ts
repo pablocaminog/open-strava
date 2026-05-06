@@ -446,3 +446,130 @@ async function notifyComment(
     text: tpl.text,
   });
 }
+
+// ------------------------- Archive uploads --------------------------
+//
+// POST /api/v1/me/import/archive  — receives multipart/form-data upload
+//   (or a raw application/zip body) and streams it to R2. Enqueues an
+//   archive-process job for the queue consumer to unpack asynchronously
+//   and fan out to per-activity ingest. Returns the archive id so the
+//   client can poll for progress.
+//
+// Hard cap: 1 GB per archive. Bigger than that warrants chunking.
+
+const MAX_ARCHIVE_BYTES = 1_000_000_000;
+
+activityRoutes.post('/me/import/archive', async (c) => {
+  const session = c.get('session');
+  const ct = c.req.header('content-type') ?? '';
+  let bytes: ArrayBuffer;
+  let filename = `archive-${Date.now()}.zip`;
+
+  if (ct.startsWith('multipart/form-data')) {
+    const form = await c.req.raw.formData();
+    const file = form.get('file');
+    if (!(file instanceof File)) {
+      throw new HTTPException(400, { message: 'file form field required' });
+    }
+    bytes = (await file.arrayBuffer()) as ArrayBuffer;
+    filename = file.name || filename;
+  } else {
+    bytes = (await c.req.raw.arrayBuffer()) as ArrayBuffer;
+    const cd = c.req.header('content-disposition');
+    const m = cd ? /filename="?([^"]+)"?/.exec(cd) : null;
+    if (m && m[1]) filename = m[1];
+  }
+  if (bytes.byteLength === 0) {
+    throw new HTTPException(400, { message: 'empty body' });
+  }
+  if (bytes.byteLength > MAX_ARCHIVE_BYTES) {
+    throw new HTTPException(413, {
+      message: `archive exceeds ${MAX_ARCHIVE_BYTES} bytes`,
+    });
+  }
+
+  const archiveId = uuidv7();
+  const r2Path = `archives/${session.userId}/${archiveId}.zip`;
+  await c.env.RAW_BUCKET.put(r2Path, bytes, {
+    httpMetadata: { contentType: 'application/zip' },
+    customMetadata: {
+      athleteId: session.userId,
+      archiveId,
+      originalFilename: filename,
+    },
+  });
+  await c.env.DB.prepare(
+    `INSERT INTO archive_imports (id, athlete_id, filename, size_bytes, r2_path, status)
+     VALUES (?, ?, ?, ?, ?, 'queued')`,
+  )
+    .bind(archiveId, session.userId, filename, bytes.byteLength, r2Path)
+    .run();
+  await c.env.INGEST_QUEUE.send({
+    kind: 'archive',
+    archiveId,
+    athleteId: session.userId,
+    r2Path,
+    filename,
+  });
+  return c.json(
+    { id: archiveId, filename, sizeBytes: bytes.byteLength, status: 'queued' },
+    202,
+  );
+});
+
+activityRoutes.get('/me/notifications', async (c) => {
+  const session = c.get('session');
+  const url = new URL(c.req.url);
+  const unread = url.searchParams.get('unread') === '1';
+  const where = unread
+    ? 'athlete_id = ? AND read_at IS NULL'
+    : 'athlete_id = ?';
+  const rows = await c.env.DB.prepare(
+    `SELECT id, kind, payload, read_at AS readAt,
+            datetime(created_at, 'unixepoch') AS createdAt
+       FROM notifications WHERE ${where}
+      ORDER BY created_at DESC LIMIT 50`,
+  )
+    .bind(session.userId)
+    .all();
+  return c.json({ items: rows.results ?? [] });
+});
+
+activityRoutes.post('/me/notifications/:id/read', async (c) => {
+  const session = c.get('session');
+  await c.env.DB.prepare(
+    `UPDATE notifications SET read_at = unixepoch() WHERE id = ? AND athlete_id = ?`,
+  )
+    .bind(c.req.param('id'), session.userId)
+    .run();
+  return c.json({ ok: true });
+});
+
+activityRoutes.post('/me/notifications/read-all', async (c) => {
+  const session = c.get('session');
+  await c.env.DB.prepare(
+    `UPDATE notifications SET read_at = unixepoch() WHERE athlete_id = ? AND read_at IS NULL`,
+  )
+    .bind(session.userId)
+    .run();
+  return c.json({ ok: true });
+});
+
+activityRoutes.get('/me/import/archives', async (c) => {
+  const session = c.get('session');
+  const rows = await c.env.DB.prepare(
+    `SELECT id, filename, size_bytes AS sizeBytes, status,
+            total_files AS totalFiles, succeeded, duplicates, failed,
+            last_error AS lastError,
+            datetime(created_at, 'unixepoch') AS createdAt,
+            datetime(updated_at, 'unixepoch') AS updatedAt,
+            datetime(completed_at, 'unixepoch') AS completedAt
+       FROM archive_imports
+      WHERE athlete_id = ?
+      ORDER BY created_at DESC
+      LIMIT 50`,
+  )
+    .bind(session.userId)
+    .all();
+  return c.json({ items: rows.results ?? [] });
+});

@@ -34,7 +34,7 @@ export interface Env {
   KV_FEED: KVNamespace;
 
   // Queues
-  INGEST_QUEUE: Queue<IngestJob>;
+  INGEST_QUEUE: Queue<QueueJob>;
 }
 
 /**
@@ -53,14 +53,32 @@ export interface EmailSendBinding {
   }): Promise<unknown>;
 }
 
-export interface IngestJob {
+/**
+ * Discriminated union over the queue's job types. Adding `kind`
+ * keeps backwards compatibility — old messages without it default to
+ * 'activity' in the consumer.
+ */
+export type QueueJob = ActivityIngestJob | ArchiveProcessJob;
+
+export interface ActivityIngestJob {
+  kind?: 'activity';
   activityId: string;
   athleteId: string;
   rawR2Path: string;
   source: 'fit' | 'tcx' | 'gpx';
-  /** Provider that originated this activity, when known. Used for
-   * de-duplication on re-import. */
   externalSource?: 'strava' | 'garmin';
-  /** Provider-side activity id (Strava activity id, Garmin summary id). */
   externalId?: string;
 }
+
+export interface ArchiveProcessJob {
+  kind: 'archive';
+  archiveId: string;
+  athleteId: string;
+  /** R2 key under RAW_BUCKET — full archive blob. */
+  r2Path: string;
+  filename: string;
+}
+
+/** @deprecated Use {@link ActivityIngestJob}. Kept for back-compat
+ *  in routes that still type as `IngestJob`. */
+export type IngestJob = ActivityIngestJob;

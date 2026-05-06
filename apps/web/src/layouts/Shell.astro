@@ -80,9 +80,14 @@ const navCommunity: { id: string; label: string; href: string; icon: string }[] 
           autocomplete="off"
         />
       </div>
-      <button class="iconbtn" type="button" title="Notifications" aria-label="Notifications">
+      <a id="topbar-bell" class="iconbtn" href="/upload" title="Notifications" aria-label="Notifications" style="position: relative;">
         <Icon name="bell" size={18} />
-      </button>
+        <span
+          id="topbar-bell-badge"
+          hidden
+          style="position: absolute; top: 6px; right: 6px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 9999px; background: var(--pace-500); color: var(--ink-950); font-family: var(--font-mono); font-size: 9px; font-weight: 600; line-height: 14px; text-align: center;"
+        >0</span>
+      </a>
       <a class="upload-btn" href="/upload">
         <Icon name="upload" size={14} /> Upload
       </a>
@@ -117,4 +122,22 @@ const navCommunity: { id: string; label: string; href: string; icon: string }[] 
       })
       .catch(() => {});
   }
+
+  // Unread-notification badge. Polls every 30s.
+  const badge = document.getElementById('topbar-bell-badge') as HTMLElement | null;
+  async function refreshBadge() {
+    if (!badge) return;
+    const r = await fetch('/api/v1/me/notifications?unread=1', { credentials: 'include' });
+    if (!r.ok) return;
+    const body = (await r.json()) as { items: unknown[] };
+    const n = body.items.length;
+    if (n > 0) {
+      badge.textContent = n > 9 ? '9+' : String(n);
+      badge.hidden = false;
+    } else {
+      badge.hidden = true;
+    }
+  }
+  void refreshBadge();
+  setInterval(() => void refreshBadge(), 30_000);
 </script>
