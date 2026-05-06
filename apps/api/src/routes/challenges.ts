@@ -68,17 +68,85 @@ challengeRoutes.post('/challenges', async (c) => {
 });
 
 challengeRoutes.get('/challenges', async (c) => {
+  const session = c.get('session');
   const now = Math.floor(Date.now() / 1000);
   const rows = await c.env.DB.prepare(
-    `SELECT id, name, metric, goal, sport, starts_at AS startsAt, ends_at AS endsAt, visibility
-       FROM challenges
-      WHERE visibility = 'public' AND ends_at >= ?
-      ORDER BY starts_at ASC
+    `SELECT c.id, c.name, c.metric, c.goal, c.sport,
+            c.starts_at AS startsAt, c.ends_at AS endsAt, c.visibility,
+            CASE WHEN p.athlete_id IS NOT NULL THEN 1 ELSE 0 END AS joined
+       FROM challenges c
+       LEFT JOIN challenge_participants p
+         ON p.challenge_id = c.id AND p.athlete_id = ?
+      WHERE c.visibility = 'public' AND c.ends_at >= ?
+      ORDER BY c.starts_at ASC
       LIMIT 100`,
   )
-    .bind(now)
+    .bind(session.userId, now)
     .all();
   return c.json({ items: rows.results ?? [] });
+});
+
+/**
+ * Joined challenges + per-athlete progress. Computes the running total
+ * for the athlete inside the challenge window directly from activities.
+ */
+challengeRoutes.get('/me/challenges', async (c) => {
+  const session = c.get('session');
+  const rows = await c.env.DB.prepare(
+    `SELECT c.id, c.name, c.metric, c.goal, c.sport,
+            c.starts_at AS startsAt, c.ends_at AS endsAt
+       FROM challenges c
+       JOIN challenge_participants p ON p.challenge_id = c.id
+      WHERE p.athlete_id = ?
+      ORDER BY c.starts_at DESC`,
+  )
+    .bind(session.userId)
+    .all<{
+      id: string;
+      name: string;
+      metric: 'distance_m' | 'ascent_m' | 'total_seconds' | 'tss';
+      goal: number;
+      sport: string | null;
+      startsAt: number;
+      endsAt: number;
+    }>();
+
+  const items = [] as Array<{
+    id: string;
+    name: string;
+    metric: string;
+    goal: number;
+    sport: string | null;
+    startsAt: number;
+    endsAt: number;
+    progress: number;
+    pct: number;
+  }>;
+  for (const ch of rows.results ?? []) {
+    const col =
+      ch.metric === 'distance_m'
+        ? 'distance_m'
+        : ch.metric === 'ascent_m'
+          ? 'ascent_m'
+          : ch.metric === 'total_seconds'
+            ? 'total_seconds'
+            : 'tss';
+    const sportClause = ch.sport ? 'AND sport = ?' : '';
+    const sql = `SELECT COALESCE(SUM(${col}), 0) AS total FROM activities
+                  WHERE athlete_id = ? AND started_at BETWEEN ? AND ? ${sportClause}`;
+    const stmt = c.env.DB.prepare(sql);
+    const bound = ch.sport
+      ? stmt.bind(session.userId, ch.startsAt, ch.endsAt, ch.sport)
+      : stmt.bind(session.userId, ch.startsAt, ch.endsAt);
+    const r = await bound.first<{ total: number }>();
+    const progress = Number(r?.total ?? 0);
+    items.push({
+      ...ch,
+      progress,
+      pct: ch.goal > 0 ? Math.min(100, Math.round((progress / ch.goal) * 1000) / 10) : 0,
+    });
+  }
+  return c.json({ items });
 });
 
 challengeRoutes.get('/challenges/:id', async (c) => {

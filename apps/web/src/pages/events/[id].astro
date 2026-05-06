@@ -1,0 +1,173 @@
+---
+import Shell from '../../layouts/Shell.astro';
+import Icon from '../../components/Icon.astro';
+const { id } = Astro.params;
+---
+
+<Shell title="Event" active="events">
+  <div class="stack" style="gap: 20px;">
+    <a href="/events" class="btn btn-ghost btn-sm" style="align-self: flex-start; padding: 6px 8px;">
+      <Icon name="arrow-left" size={14} /> All events
+    </a>
+
+    <header id="event-header" class="stack" style="gap: 8px;">
+      <h1 class="h1">Loading…</h1>
+    </header>
+
+    <div class="grid-tiles grid-cols-4" id="event-tiles"></div>
+
+    <div class="panel">
+      <div class="panel-body stack" style="gap: 12px;">
+        <span class="metric-label">Your RSVP</span>
+        <div class="row" style="gap: 8px; flex-wrap: wrap;">
+          <button data-rsvp="accepted" class="btn btn-primary">Going</button>
+          <button data-rsvp="maybe" class="btn btn-secondary">Maybe</button>
+          <button data-rsvp="declined" class="btn btn-secondary">Decline</button>
+          <span id="rsvp-status" class="caption" style="margin-left: 8px;"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="event-description-wrap" hidden>
+      <div class="panel-header"><h3 class="h3" style="font-size: 16px;">Details</h3></div>
+      <div class="panel-body" id="event-description"></div>
+    </div>
+  </div>
+</Shell>
+
+<script define:vars={{ id }}>
+  window.__PACELORE_EVENT_ID__ = id;
+</script>
+
+<script>
+  type EventResp = {
+    event: {
+      id: string;
+      clubId: string | null;
+      ownerId: string;
+      name: string;
+      description: string | null;
+      type: 'group_ride' | 'race' | 'training' | 'social';
+      startsAt: number;
+      endsAt: number | null;
+      location: string | null;
+      capacity: number | null;
+    };
+    rsvpCounts: { accepted?: number; maybe?: number; declined?: number; waitlisted?: number };
+  };
+
+  const id = (window as unknown as { __PACELORE_EVENT_ID__: string }).__PACELORE_EVENT_ID__;
+  const header = document.getElementById('event-header')!;
+  const tiles = document.getElementById('event-tiles')!;
+  const descWrap = document.getElementById('event-description-wrap')!;
+  const desc = document.getElementById('event-description')!;
+  const rsvpStatus = document.getElementById('rsvp-status')!;
+
+  init().catch((err) => {
+    header.innerHTML = `<h1 class="h1">Couldn't load event</h1><p class="caption">${escape((err as Error).message)}</p>`;
+  });
+
+  async function init() {
+    const r = await fetch(`/api/v1/events/${id}`, { credentials: 'include' });
+    if (r.status === 401) {
+      header.innerHTML = `<h1 class="h1">Sign in to view this event</h1><p class="caption"><a href="/login?next=/events/${escape(id)}" style="color: var(--fg); text-decoration: underline;">Go to sign in</a></p>`;
+      return;
+    }
+    if (!r.ok) {
+      header.innerHTML = `<h1 class="h1">Event not found</h1>`;
+      return;
+    }
+    const body = (await r.json()) as EventResp;
+    renderHeader(body);
+    renderTiles(body);
+    if (body.event.description) {
+      desc.textContent = body.event.description;
+      descWrap.hidden = false;
+    }
+    if (body.event.clubId) loadClubLink(body.event.clubId);
+  }
+
+  function renderHeader(b: EventResp) {
+    const e = b.event;
+    const start = new Date(e.startsAt * 1000);
+    const when = start.toLocaleString(undefined, {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZoneName: 'short',
+    });
+    header.innerHTML = `
+      <div class="row" style="gap: 12px; flex-wrap: wrap;">
+        <span class="chip chip-muted">${escape(e.type.replace('_', ' '))}</span>
+        ${e.location ? `<span class="caption" style="font-family: var(--font-mono);">${escape(e.location)}</span>` : ''}
+      </div>
+      <h1 class="h1">${escape(e.name)}</h1>
+      <p class="muted body-sm" style="font-family: var(--font-mono);">${escape(when)}</p>
+      <p id="club-link-slot" class="caption"></p>
+    `;
+  }
+
+  function renderTiles(b: EventResp) {
+    const e = b.event;
+    const accepted = Number(b.rsvpCounts.accepted ?? 0);
+    const maybe = Number(b.rsvpCounts.maybe ?? 0);
+    const declined = Number(b.rsvpCounts.declined ?? 0);
+    const start = new Date(e.startsAt * 1000);
+    const dayStr = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    tiles.innerHTML = `
+      <div class="tile">
+        <span class="label">when</span>
+        <span class="v" style="font-size: 22px;">${escape(dayStr)}</span>
+      </div>
+      <div class="tile">
+        <span class="label">going</span>
+        <span class="v">${accepted}</span>
+      </div>
+      <div class="tile">
+        <span class="label">maybe</span>
+        <span class="v">${maybe}</span>
+      </div>
+      <div class="tile">
+        <span class="label">declined</span>
+        <span class="v">${declined}</span>
+      </div>
+    `;
+  }
+
+  async function loadClubLink(clubId: string) {
+    const r = await fetch(`/api/v1/clubs/${clubId}`, { credentials: 'include' });
+    if (!r.ok) return;
+    const body = (await r.json()) as { club: { id: string; name: string } };
+    const slot = document.getElementById('club-link-slot');
+    if (slot) {
+      slot.innerHTML = `Hosted by <a href="/clubs/${escape(body.club.id)}" style="color: var(--fg); text-decoration: underline;">${escape(body.club.name)}</a>`;
+    }
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('[data-rsvp]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const status = btn.dataset.rsvp;
+      btn.disabled = true;
+      const r = await fetch(`/api/v1/events/${id}/rsvp`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      btn.disabled = false;
+      if (r.ok) {
+        rsvpStatus.textContent = `RSVP saved · ${status}`;
+        location.reload();
+      } else {
+        rsvpStatus.textContent = `Couldn't save · HTTP ${r.status}`;
+      }
+    });
+  });
+
+  function escape(s: string): string {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+</script>

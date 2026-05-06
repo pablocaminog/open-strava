@@ -1,0 +1,165 @@
+---
+import Shell from '../../layouts/Shell.astro';
+import Icon from '../../components/Icon.astro';
+const { id } = Astro.params;
+---
+
+<Shell title="Club" active="clubs">
+  <div class="stack" style="gap: 20px;">
+    <a href="/clubs" class="btn btn-ghost btn-sm" style="align-self: flex-start; padding: 6px 8px;">
+      <Icon name="arrow-left" size={14} /> All clubs
+    </a>
+
+    <header id="club-header" class="stack" style="gap: 8px;">
+      <h1 class="h1">Loading…</h1>
+    </header>
+
+    <div class="grid-tiles grid-cols-3" id="club-tiles"></div>
+
+    <div class="panel">
+      <div class="panel-header"><h3 class="h3" style="font-size: 16px;">Members</h3></div>
+      <ul id="club-members" class="stack" style="list-style: none; margin: 0; padding: 0;"></ul>
+    </div>
+  </div>
+</Shell>
+
+<script define:vars={{ id }}>
+  window.__PACELORE_CLUB_ID__ = id;
+</script>
+
+<script>
+  type ClubResp = {
+    club: {
+      id: string;
+      name: string;
+      description: string | null;
+      sportFocus: string | null;
+      visibility: 'public' | 'private';
+      ownerId: string;
+    };
+    memberCount: number;
+  };
+
+  const id = (window as unknown as { __PACELORE_CLUB_ID__: string }).__PACELORE_CLUB_ID__;
+  const header = document.getElementById('club-header')!;
+  const tiles = document.getElementById('club-tiles')!;
+  const members = document.getElementById('club-members')!;
+
+  init().catch((err) => {
+    header.innerHTML = `<h1 class="h1">Couldn't load club</h1><p class="caption">${escape((err as Error).message)}</p>`;
+  });
+
+  async function init() {
+    const r = await fetch(`/api/v1/clubs/${id}`, { credentials: 'include' });
+    if (r.status === 401) {
+      header.innerHTML = `<h1 class="h1">Sign in to view this club</h1><p class="caption"><a href="/login?next=/clubs/${escape(id)}" style="color: var(--fg); text-decoration: underline;">Go to sign in</a></p>`;
+      return;
+    }
+    if (!r.ok) {
+      header.innerHTML = `<h1 class="h1">Club not found</h1>`;
+      return;
+    }
+    const body = (await r.json()) as ClubResp;
+    let isMember = false;
+    try {
+      const me = await fetch('/api/v1/auth/me', { credentials: 'include' });
+      if (me.ok) {
+        const meId = (await me.json()).user.id as string;
+        const mres = await fetch(`/api/v1/clubs/${id}/members`, { credentials: 'include' });
+        if (mres.ok) {
+          const list = (await mres.json()) as {
+            items: { athleteId: string; handle: string; displayName: string | null; role: string }[];
+          };
+          isMember = list.items.some((m) => m.athleteId === meId);
+          renderMembers(list.items);
+        }
+      }
+    } catch {}
+
+    renderHeader(body, isMember);
+    renderTiles(body);
+  }
+
+  function renderHeader(b: ClubResp, isMember: boolean) {
+    const c = b.club;
+    header.innerHTML = `
+      <div class="row" style="gap: 12px; flex-wrap: wrap;">
+        <span class="metric-label">${escape(c.visibility)} club</span>
+        ${c.sportFocus ? `<span class="chip chip-muted">${escape(c.sportFocus)}</span>` : ''}
+      </div>
+      <h1 class="h1">${escape(c.name)}</h1>
+      ${c.description ? `<p class="body" style="max-width: 70ch;">${escape(c.description)}</p>` : ''}
+      <div class="row" style="gap: 12px; padding-top: 4px;">
+        <button id="join-btn" type="button" class="btn ${isMember ? 'btn-secondary' : 'btn-primary'}">
+          ${isMember ? 'Leave club' : 'Join club'}
+        </button>
+        <span class="caption">${b.memberCount} ${b.memberCount === 1 ? 'member' : 'members'}</span>
+      </div>
+    `;
+    document.getElementById('join-btn')?.addEventListener('click', async (ev) => {
+      const btn = ev.currentTarget as HTMLButtonElement;
+      btn.disabled = true;
+      const method = isMember ? 'DELETE' : 'POST';
+      const r = await fetch(`/api/v1/clubs/${id}/members`, { method, credentials: 'include' });
+      btn.disabled = false;
+      if (r.ok) location.reload();
+    });
+  }
+
+  function renderTiles(b: ClubResp) {
+    tiles.innerHTML = `
+      <div class="tile">
+        <span class="label">members</span>
+        <span class="v">${b.memberCount}</span>
+      </div>
+      <div class="tile">
+        <span class="label">sport</span>
+        <span class="v" style="font-size: 20px;">${escape(b.club.sportFocus ?? 'mixed')}</span>
+      </div>
+      <div class="tile">
+        <span class="label">visibility</span>
+        <span class="v" style="font-size: 20px;">${escape(b.club.visibility)}</span>
+      </div>
+    `;
+  }
+
+  function renderMembers(
+    list: { athleteId: string; handle: string; displayName: string | null; role: string }[],
+  ) {
+    if (list.length === 0) {
+      members.innerHTML = `<li class="empty" style="margin: 16px;">No members yet.</li>`;
+      return;
+    }
+    members.innerHTML = list
+      .map((m) => {
+        const display = m.displayName ?? m.handle;
+        const initials = display
+          .split(/[\s_-]+/)
+          .filter(Boolean)
+          .slice(0, 2)
+          .map((s) => s[0]?.toUpperCase() ?? '')
+          .join('');
+        const color = ((hash(m.handle) % 5) + 1) as 1 | 2 | 3 | 4 | 5;
+        return `
+          <li style="display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border);">
+            <a href="/athletes/${escape(m.handle)}" class="row" style="flex: 1; gap: 12px; align-items: center;">
+              <span class="avatar sm" data-color="${color}"><span>${escape(initials || '?')}</span></span>
+              <span style="font-weight: 500;">${escape(display)}</span>
+              <span class="caption" style="font-family: var(--font-mono);">@${escape(m.handle)}</span>
+            </a>
+            <span class="chip chip-muted">${escape(m.role)}</span>
+          </li>
+        `;
+      })
+      .join('');
+  }
+
+  function hash(s: string): number {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+    return Math.abs(h);
+  }
+  function escape(s: string): string {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+</script>

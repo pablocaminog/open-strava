@@ -1,19 +1,10 @@
 ---
 import Marketing from '../layouts/Marketing.astro';
 
-// If the visitor already has a valid session, jump straight to the feed.
-const cookie = Astro.request.headers.get('cookie');
-if (cookie) {
-  try {
-    const me = await fetch(new URL('/api/v1/auth/me', Astro.url), {
-      headers: { cookie },
-      redirect: 'manual',
-    });
-    if (me.ok) return Astro.redirect('/feed');
-  } catch {
-    // fall through to landing
-  }
-}
+// Logged-in redirect runs client-side (see <script> at end of file) so the
+// marketing HTML is the same for every crawler and edge cache hit. Avoids
+// Set-Cookie variance polluting the Pages cache and keeps Googlebot on the
+// indexable page.
 
 const faq = [
   {
