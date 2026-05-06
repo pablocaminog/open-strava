@@ -14,6 +14,12 @@ PACELORE_API_ORIGIN = "https://api.pacelore.com"
 [assets]
 binding = "ASSETS"
 directory = "./dist"
+# SSR pages and asset routing are both handled by the Astro adapter.
+# Run the worker first so asset routing decisions happen there too,
+# instead of the static-assets layer short-circuiting paths that the
+# Astro adapter's app.match would have routed to SSR.
+run_worker_first = true
+not_found_handling = "none"
 
 [observability.logs]
 enabled = true
