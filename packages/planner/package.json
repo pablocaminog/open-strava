@@ -1,0 +1,20 @@
+{
+  "name": "@pacelore/planner",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Race training plan generator — periodization engine, scheduler, Claude audit.",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "vitest": "2.1.5"
+  }
+}
