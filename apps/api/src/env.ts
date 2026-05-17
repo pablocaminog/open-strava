@@ -17,6 +17,7 @@ export interface Env {
   GARMIN_CONSUMER_KEY?: string;
   GARMIN_CONSUMER_SECRET?: string;
   ARWEAVE_TURBO_TOKEN?: string;
+  ANTHROPIC_API_KEY?: string;
   ATPROTO_PDS_URL?: string;
   /** Default `From` value, e.g. "PaceLore <noreply@notifications.pacelore.com>". */
   EMAIL_FROM?: string;
