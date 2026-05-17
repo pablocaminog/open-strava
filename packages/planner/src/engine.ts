@@ -21,12 +21,12 @@ export function buildWeekPlans(spec: PlanSpec, template: RaceTemplate): WeekPlan
   let buildIdx = 0;
 
   for (let i = 0; i < totalWeeks; i++) {
-    const phase = phaseSequence[i];
+    const phase = phaseSequence[i]!;
     let tss: number;
 
     if (phase === 'recovery') {
       // Use 65% of previous week's TSS
-      tss = weeks.length > 0 ? weeks[weeks.length - 1].tss * 0.65 : tssStart * 0.65;
+      tss = weeks.length > 0 ? weeks[weeks.length - 1]!.tss * 0.65 : tssStart * 0.65;
     } else if (phase === 'taper') {
       // Linear ramp down from 70% to 40% of peak over taper weeks
       const taperIdx = i - (totalWeeks - template.taperWeeks);
@@ -82,7 +82,7 @@ function assignPhases(template: RaceTemplate, totalWeeks: number): Phase[] {
 
   // Fill any rounding remainder with last non-taper phase
   while (result.length < buildableWeeks) {
-    result.push(nonTaper[nonTaper.length - 1].name as Phase);
+    result.push(nonTaper[nonTaper.length - 1]!.name as Phase);
   }
 
   // Append taper weeks
@@ -97,5 +97,5 @@ function getCurrentMix(template: RaceTemplate, phase: Phase) {
   const p = template.phases.find(ph => ph.name === phase);
   if (p) return p.mix;
   // recovery/taper fall back to first phase mix
-  return template.phases[0].mix;
+  return template.phases[0]!.mix;
 }

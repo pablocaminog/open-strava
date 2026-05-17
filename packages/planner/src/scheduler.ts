@@ -73,8 +73,7 @@ export function scheduleWeek(
         zone,
         phase: week.phase,
         description: buildDescription(sport, week.phase, cell.intensity!),
-        windowStart: cell.window?.start,
-        windowEnd: cell.window?.end,
+        ...(cell.window ? { windowStart: cell.window.start, windowEnd: cell.window.end } : {}),
       });
     }
   }
