@@ -341,7 +341,6 @@ trainingRoutes.post('/planned-workouts', async (c) => {
       const ok = await isCoachOf(c.env, session.userId, targetAthlete);
       if (!ok) throw new HTTPException(403, { message: 'not your athlete' });
     }
-    const totalSec = parsed.steps.reduce((s, st) => s + st.durationSec, 0);
     const { tss, duration } = estimateLoad(parsed.steps as WorkoutBody['steps']);
     const workoutId = uuidv7();
     await c.env.DB.prepare(
@@ -355,7 +354,7 @@ trainingRoutes.post('/planned-workouts', async (c) => {
         parsed.description ?? null,
         parsed.sport,
         tss,
-        duration ?? totalSec,
+        duration,
         JSON.stringify({ steps: parsed.steps }),
       )
       .run();
