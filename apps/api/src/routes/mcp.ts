@@ -3,19 +3,24 @@
  *
  * Exposes a curated tool surface so an agentic AI can read + act on
  * the user's pacelore data. Authentication is via the same
- * X-Api-Key header used by the public REST API. The agent's effective
- * user is the API key's owner; scope checks on each tool.
+ * X-Api-Key header used by the public REST API, or via OAuth 2.1
+ * Bearer tokens (for Claude custom connector support).
+ *
+ * OAuth 2.1 endpoints (public, no auth required):
+ *   GET  /.well-known/oauth-authorization-server  (discovery)
+ *   GET  /authorize                                (HTML form → code)
+ *   POST /authorize                                (form submit → redirect)
+ *   POST /token                                    (code → access_token)
+ *
+ * MCP JSON-RPC 2.0 (requires auth):
+ *   POST /
  *
  * Methods implemented:
  *   - initialize
  *   - tools/list
  *   - tools/call
- *   - resources/list  (read-only listing of activity ids)
- *   - resources/read  (fetches a single activity)
- *
- * The `mcp/` route is mounted directly on the worker; transport is
- * Streamable HTTP per the MCP 2025-06 spec, but for v1 we accept the
- * simpler JSON-RPC POST shape that almost every MCP client supports.
+ *   - resources/list
+ *   - resources/read
  */
 
 import { Hono, type Context } from 'hono';
@@ -25,6 +30,118 @@ import { requireApiKey, type ApiKeyVariables } from '../auth/apiKey.js';
 type Ctx = Context<{ Bindings: Env; Variables: ApiKeyVariables }>;
 
 export const mcpRoutes = new Hono<{ Bindings: Env; Variables: ApiKeyVariables }>();
+
+// ── OAuth helpers ────────────────────────────────────────────────────────────
+
+const OAUTH_CODE_TTL = 300; // 5 minutes
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+async function sha256Base64Url(s: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+// ── OAuth 2.1 endpoints (no auth required) ───────────────────────────────────
+
+mcpRoutes.get('/.well-known/oauth-authorization-server', (c) => {
+  const base = new URL(c.req.url).origin + '/mcp';
+  return c.json({
+    issuer: base,
+    authorization_endpoint: `${base}/authorize`,
+    token_endpoint: `${base}/token`,
+    response_types_supported: ['code'],
+    grant_types_supported: ['authorization_code'],
+    code_challenge_methods_supported: ['S256'],
+    token_endpoint_auth_methods_supported: ['none'],
+  });
+});
+
+mcpRoutes.get('/authorize', (c) => {
+  const q = c.req.query();
+  const { redirect_uri = '', state = '', code_challenge = '', code_challenge_method = 'S256' } = q;
+  if (!redirect_uri || !code_challenge) return c.text('Missing redirect_uri or code_challenge', 400);
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Connect Claude to pacelore</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:system-ui;max-width:420px;margin:80px auto;padding:0 20px;color:#e0e0e0;background:#0E1012}
+h1{font-size:20px;margin-bottom:4px}
+p{color:#888;font-size:14px;margin-bottom:24px}
+label{display:block;font-size:13px;margin-bottom:6px;color:#aaa}
+input[type=password]{width:100%;padding:10px 12px;border:1px solid #333;border-radius:8px;background:#1a1d20;color:#fff;font-family:monospace;font-size:14px;margin-bottom:16px;outline:none}
+input[type=password]:focus{border-color:#C8FA1F}
+button{width:100%;padding:12px;background:#C8FA1F;color:#0E1012;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer}
+.hint{font-size:12px;color:#666;margin-top:16px}a{color:#C8FA1F}
+</style>
+</head>
+<body>
+<h1>Connect Claude to pacelore</h1>
+<p>Enter your API key to let Claude read your training data.</p>
+<form method="POST" action="/mcp/authorize">
+<input type="hidden" name="redirect_uri" value="${escapeHtml(redirect_uri)}">
+<input type="hidden" name="state" value="${escapeHtml(state)}">
+<input type="hidden" name="code_challenge" value="${escapeHtml(code_challenge)}">
+<input type="hidden" name="code_challenge_method" value="${escapeHtml(code_challenge_method)}">
+<label for="k">API Key</label>
+<input id="k" name="apikey" type="password" placeholder="osk_..." autocomplete="off" required>
+<button type="submit">Authorize</button>
+</form>
+<p class="hint">Find your key at <a href="https://pacelore.com/settings" target="_blank">pacelore.com/settings</a>.</p>
+</body>
+</html>`;
+  return c.html(html);
+});
+
+mcpRoutes.post('/authorize', async (c) => {
+  const body = await c.req.parseBody() as Record<string, string>;
+  const { redirect_uri, state, code_challenge, code_challenge_method = 'S256', apikey } = body;
+  if (!redirect_uri || !code_challenge || !apikey) return c.text('Missing required fields', 400);
+  if (!apikey.includes('.')) return c.html('<p>Invalid API key format. <a href="javascript:history.back()">Go back</a></p>', 400);
+
+  const code = crypto.randomUUID();
+  await c.env.KV_SESSIONS.put(
+    `mcp_oauth:${code}`,
+    JSON.stringify({ apiKey: apikey, codeChallenge: code_challenge, codeChallengeMethod: code_challenge_method }),
+    { expirationTtl: OAUTH_CODE_TTL },
+  );
+
+  const dest = new URL(redirect_uri);
+  dest.searchParams.set('code', code);
+  if (state) dest.searchParams.set('state', state);
+  return c.redirect(dest.toString(), 302);
+});
+
+mcpRoutes.post('/token', async (c) => {
+  const body = await c.req.parseBody() as Record<string, string>;
+  const { grant_type, code, code_verifier } = body;
+  if (grant_type !== 'authorization_code' || !code || !code_verifier) {
+    return c.json({ error: 'invalid_request' }, 400);
+  }
+
+  const raw = await c.env.KV_SESSIONS.get(`mcp_oauth:${code}`);
+  if (!raw) return c.json({ error: 'invalid_grant' }, 400);
+
+  const { apiKey, codeChallenge, codeChallengeMethod } = JSON.parse(raw) as {
+    apiKey: string; codeChallenge: string; codeChallengeMethod: string;
+  };
+
+  if (codeChallengeMethod === 'S256') {
+    const hash = await sha256Base64Url(code_verifier);
+    if (hash !== codeChallenge) return c.json({ error: 'invalid_grant' }, 400);
+  }
+
+  await c.env.KV_SESSIONS.delete(`mcp_oauth:${code}`);
+
+  return c.json({ access_token: apiKey, token_type: 'bearer', expires_in: 315_360_000 });
+});
 
 const SERVER_INFO = {
   name: 'pacelore',
@@ -149,7 +266,21 @@ const TOOLS = [
   },
 ] as const;
 
-mcpRoutes.use('*', requireApiKey());
+// ── MCP JSON-RPC endpoint (auth required) ───────────────────────────────────
+
+// Accept X-Api-Key OR Authorization: Bearer <key> (issued by OAuth flow above).
+mcpRoutes.use('/', async (c, next) => {
+  const bearer = c.req.header('Authorization')?.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (bearer) {
+    // Inject as a virtual X-Api-Key header by cloning with a modified request.
+    // Hono doesn't let us mutate headers, so proxy via a reconstructed Request.
+    const headers = new Headers(c.req.raw.headers);
+    headers.set('x-api-key', bearer);
+    const req = new Request(c.req.raw, { headers });
+    c.req.raw = req;
+  }
+  return requireApiKey()(c, next);
+});
 
 mcpRoutes.post('/', async (c) => {
   const req = (await c.req.raw.json().catch(() => null)) as {
