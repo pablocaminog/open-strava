@@ -27,6 +27,7 @@ import { Hono, type Context } from 'hono';
 import type { Env } from '../env.js';
 import { requireApiKey, type ApiKeyVariables } from '../auth/apiKey.js';
 import { uuidv7 } from '../util/uuid.js';
+import { parseWorkoutCsv, WorkoutCsvError } from '@pacelore/workout-csv';
 
 type Ctx = Context<{ Bindings: Env; Variables: ApiKeyVariables }>;
 
@@ -326,6 +327,24 @@ const TOOLS = [
         id: { type: 'string' },
       },
       required: ['id'],
+    },
+    requiredScope: 'write:training',
+  },
+  {
+    name: 'create_workout_from_csv',
+    description:
+      'Create a structured workout from CSV text. First row: name, sport[, description]. Subsequent rows: block_name, duration_secs[, target]. Target formats: 170W, 80-150W, 75%, 80-90%, 140bpm, 4:30/km. Optionally schedule on a date.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        csvText: { type: 'string' },
+        scheduledDate: {
+          type: 'string',
+          pattern: '^\\d{4}-\\d{2}-\\d{2}$',
+          description: 'Optional YYYY-MM-DD to schedule immediately after creating.',
+        },
+      },
+      required: ['csvText'],
     },
     requiredScope: 'write:training',
   },
@@ -690,6 +709,54 @@ async function runTool(c: Ctx, id: unknown, name: string, args: Record<string, u
         .bind(pwId, userId)
         .run();
       return ok({ ok: true });
+    }
+    case 'create_workout_from_csv': {
+      const csvText = typeof args.csvText === 'string' ? args.csvText : '';
+      if (!csvText) return jsonRpcError(c, id, -32602, 'csvText is required');
+
+      let parsed;
+      try {
+        parsed = parseWorkoutCsv(csvText);
+      } catch (e) {
+        if (e instanceof WorkoutCsvError) {
+          return jsonRpcError(c, id, -32602, e.message);
+        }
+        throw e;
+      }
+
+      const totalSec = parsed.steps.reduce((s, st) => s + st.durationSec, 0);
+      const workoutId = uuidv7();
+      await env.DB.prepare(
+        `INSERT INTO workouts (id, athlete_id, name, description, sport, estimated_duration_sec, steps_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+        .bind(
+          workoutId,
+          userId,
+          parsed.name,
+          parsed.description ?? null,
+          parsed.sport,
+          totalSec,
+          JSON.stringify({ steps: parsed.steps }),
+        )
+        .run();
+
+      let plannedId: string | null = null;
+      const scheduledDate =
+        typeof args.scheduledDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(args.scheduledDate)
+          ? args.scheduledDate
+          : null;
+      if (scheduledDate) {
+        plannedId = uuidv7();
+        await env.DB.prepare(
+          `INSERT INTO planned_workouts (id, athlete_id, workout_id, scheduled_date, assigned_by, created_at)
+           VALUES (?, ?, ?, ?, ?, unixepoch())`,
+        )
+          .bind(plannedId, userId, workoutId, scheduledDate, userId)
+          .run();
+      }
+
+      return ok({ workoutId, ...(plannedId ? { plannedId, scheduledDate } : {}) });
     }
     default:
       return jsonRpcError(c, id, -32601, `unknown tool: ${name}`);

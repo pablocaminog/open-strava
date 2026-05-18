@@ -171,3 +171,29 @@ describe('MCP delete_planned_workout tool', () => {
     expect(db.plannedWorkouts).toHaveLength(0);
   });
 });
+
+describe('MCP create_workout_from_csv', () => {
+  it('creates a workout from csvText', async () => {
+    const env = fakeEnv();
+    const { key } = await mintApiKey(env, 'u1', ['write:training']);
+    const res = await mcpToolCall(env, key, 'create_workout_from_csv', {
+      csvText: 'Threshold, cycling\nWarm up, 600\nMain, 1800, 95-105%\nCool down, 300',
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { result?: { content: Array<{ text: string }> } };
+    const text = body.result?.content[0]?.text ?? '';
+    const data = JSON.parse(text) as { workoutId: string };
+    expect(typeof data.workoutId).toBe('string');
+  });
+
+  it('returns error on invalid csvText', async () => {
+    const env = fakeEnv();
+    const { key } = await mintApiKey(env, 'u1', ['write:training']);
+    const res = await mcpToolCall(env, key, 'create_workout_from_csv', {
+      csvText: 'Bad CSV Only One Line',
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { error?: { message: string } };
+    expect(body.error?.message).toBeTruthy();
+  });
+});

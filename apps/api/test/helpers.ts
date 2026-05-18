@@ -760,6 +760,11 @@ export class FakeD1 implements D1Database {
         },
       ];
     }
+    if (trimmed.startsWith('INSERT INTO workouts')) {
+      const [id, athlete_id, name, description, sport, estimated_duration_sec, steps_json] = params;
+      this.workouts.push({ id, athlete_id, name, description, sport, estimated_duration_sec, steps_json });
+      return [];
+    }
     if (trimmed.startsWith('INSERT INTO planned_workouts')) {
       // Parse column names from SQL to handle different INSERT shapes.
       const colMatch = trimmed.match(/\(([^)]+)\)\s+VALUES/);
