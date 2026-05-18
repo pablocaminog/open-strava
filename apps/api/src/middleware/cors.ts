@@ -4,20 +4,25 @@ import type { Env } from '../env.js';
 
 /**
  * Allow the configured Pages origin to reach the API with credentials.
- * The API key path stays open for third-party tools (per arch doc:
- * "Open API — third parties welcome, attribution-only").
+ * MCP and OAuth discovery endpoints use wildcard CORS — auth is via
+ * Bearer token, not cookies, so credentials: false is safe there.
  */
 export function corsMiddleware(): MiddlewareHandler<{ Bindings: Env }> {
-  return cors({
-    origin: (origin, c) => {
-      const allow = c.env.APP_ORIGIN;
-      if (origin === allow) return origin;
-      // Permit unauthenticated tooling without credentials.
-      return null;
-    },
-    credentials: true,
-    allowHeaders: ['Content-Type', 'Authorization', 'X-Api-Key'],
-    exposeHeaders: ['X-Request-Id'],
-    maxAge: 86_400,
-  });
+  return async (c, next) => {
+    const path = new URL(c.req.url).pathname;
+    const isMcp = path.startsWith('/mcp') || path.startsWith('/.well-known/oauth-');
+
+    return cors({
+      origin: isMcp
+        ? '*'
+        : (origin, c2) => {
+            const allow = (c2 as typeof c).env.APP_ORIGIN;
+            return origin === allow ? origin : null;
+          },
+      credentials: !isMcp,
+      allowHeaders: ['Content-Type', 'Authorization', 'X-Api-Key'],
+      exposeHeaders: ['X-Request-Id'],
+      maxAge: 86_400,
+    })(c, next);
+  };
 }
