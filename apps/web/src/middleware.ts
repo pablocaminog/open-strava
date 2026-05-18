@@ -22,6 +22,23 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
     return Response.redirect(dest.toString(), 301);
   }
 
+  // Redirect signed-in visitors away from the marketing page immediately.
+  if (url.pathname === '/') {
+    const apiOriginForAuth =
+      (context.locals as { runtime?: { env?: { PACELORE_API_ORIGIN?: string } } }).runtime?.env
+        ?.PACELORE_API_ORIGIN ??
+      import.meta.env.PACELORE_API_ORIGIN ??
+      (import.meta.env.PROD ? 'https://pacelore-api.typeauth.workers.dev' : 'http://127.0.0.1:8787');
+    try {
+      const check = await fetch(`${apiOriginForAuth.replace(/\/$/, '')}/api/v1/auth/me`, {
+        headers: { cookie: context.request.headers.get('cookie') ?? '' },
+      });
+      if (check.ok) return Response.redirect(new URL('/home', url).toString(), 302);
+    } catch {
+      // network error — fall through to marketing page
+    }
+  }
+
   if (!url.pathname.startsWith('/api/') && !url.pathname.startsWith('/mcp')) {
     return next();
   }
