@@ -68,17 +68,29 @@ export function buildApp(): Hono<{ Bindings: Env }> {
   app.route('/api/v1', roadmapRoutes);
   app.route('/mcp', mcpRoutes);
 
-  // Root-level OAuth discovery — Claude tries this before the path-based one.
+  // Root-level OAuth discovery (Claude tries origin-level before path-level).
+  app.get('/.well-known/oauth-protected-resource', (c) => {
+    const origin = new URL(c.req.url).origin;
+    const base = `${origin}/mcp`;
+    return c.json({
+      resource: base,
+      authorization_servers: [base],
+      bearer_methods_supported: ['header'],
+      scopes_supported: ['read:activities', 'read:social', 'write:social'],
+    });
+  });
   app.get('/.well-known/oauth-authorization-server', (c) => {
     const origin = new URL(c.req.url).origin;
+    const base = `${origin}/mcp`;
     return c.json({
-      issuer: `${origin}/mcp`,
-      authorization_endpoint: `${origin}/mcp/authorize`,
-      token_endpoint: `${origin}/mcp/token`,
+      issuer: base,
+      authorization_endpoint: `${base}/authorize`,
+      token_endpoint: `${base}/token`,
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code'],
       code_challenge_methods_supported: ['S256'],
       token_endpoint_auth_methods_supported: ['none'],
+      scopes_supported: ['read:activities', 'read:social', 'write:social'],
     });
   });
 

@@ -47,9 +47,8 @@ async function sha256Base64Url(s: string): Promise<string> {
 
 // ── OAuth 2.1 endpoints (no auth required) ───────────────────────────────────
 
-mcpRoutes.get('/.well-known/oauth-authorization-server', (c) => {
-  const base = new URL(c.req.url).origin + '/mcp';
-  return c.json({
+function authServerMeta(base: string) {
+  return {
     issuer: base,
     authorization_endpoint: `${base}/authorize`,
     token_endpoint: `${base}/token`,
@@ -57,7 +56,24 @@ mcpRoutes.get('/.well-known/oauth-authorization-server', (c) => {
     grant_types_supported: ['authorization_code'],
     code_challenge_methods_supported: ['S256'],
     token_endpoint_auth_methods_supported: ['none'],
+    scopes_supported: ['read:activities', 'read:social', 'write:social'],
+  };
+}
+
+// RFC 9728 — Claude fetches this first, before oauth-authorization-server.
+mcpRoutes.get('/.well-known/oauth-protected-resource', (c) => {
+  const base = new URL(c.req.url).origin + '/mcp';
+  return c.json({
+    resource: base,
+    authorization_servers: [base],
+    bearer_methods_supported: ['header'],
+    scopes_supported: ['read:activities', 'read:social', 'write:social'],
   });
+});
+
+mcpRoutes.get('/.well-known/oauth-authorization-server', (c) => {
+  const base = new URL(c.req.url).origin + '/mcp';
+  return c.json(authServerMeta(base));
 });
 
 mcpRoutes.get('/authorize', (c) => {
@@ -272,7 +288,8 @@ const TOOLS = [
 // ── MCP JSON-RPC endpoint (auth required) ───────────────────────────────────
 
 function wwwAuthenticate(origin: string) {
-  return `Bearer realm="${origin}/mcp", resource_metadata="${origin}/mcp/.well-known/oauth-authorization-server"`;
+  // Must point to oauth-protected-resource (RFC 9728), not oauth-authorization-server.
+  return `Bearer realm="${origin}/mcp", resource_metadata="${origin}/mcp/.well-known/oauth-protected-resource"`;
 }
 
 // Accept X-Api-Key OR Authorization: Bearer <key> (issued by OAuth flow above).
