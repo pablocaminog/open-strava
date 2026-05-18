@@ -29,6 +29,7 @@ const VALID_SCOPES = new Set([
   'write:social',
   'read:profile',
   'write:profile',
+  'write:training',
 ]);
 
 settingsRoutes.get('/me/settings', async (c) => {
