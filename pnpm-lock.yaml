@@ -41,6 +41,9 @@ importers:
       '@pacelore/segments':
         specifier: workspace:*
         version: link:../../packages/segments
+      '@pacelore/workout-csv':
+        specifier: workspace:*
+        version: link:../../packages/workout-csv
       '@simplewebauthn/server':
         specifier: 11.0.0
         version: 11.0.0
@@ -130,6 +133,12 @@ importers:
         version: 2.1.5(@types/node@25.6.0)
 
   packages/segments:
+    devDependencies:
+      vitest:
+        specifier: 2.1.5
+        version: 2.1.5(@types/node@25.6.0)
+
+  packages/workout-csv:
     devDependencies:
       vitest:
         specifier: 2.1.5

@@ -15,7 +15,7 @@ export interface WorkoutStep {
   kind: 'warmup' | 'work' | 'recover' | 'cooldown' | 'rest';
   durationSec?: number;
   distM?: number;
-  target?: { type: 'ftp_pct' | 'hr_pct' | 'pace'; low: number; high: number };
+  target?: { type: 'ftp_pct' | 'hr_pct' | 'hr_bpm' | 'watts' | 'pace'; low: number; high: number };
   repeat?: number;
   children?: WorkoutStep[];
 }

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@pacelore/fit-parser": "workspace:*",
+    "@pacelore/workout-csv": "workspace:*",
     "@pacelore/metrics": "workspace:*",
     "@pacelore/planner": "workspace:*",
     "@pacelore/segments": "workspace:*",
