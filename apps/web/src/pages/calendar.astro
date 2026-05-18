@@ -22,6 +22,20 @@ import Icon from '../components/Icon.astro';
       <div class="cal-loading caption">Loading calendar…</div>
     </div>
   </div>
+
+  <!-- Planned workout detail modal -->
+  <dialog id="planned-modal" style="border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--fg);padding:0;max-width:380px;width:100%;">
+    <div style="padding:20px 20px 8px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
+      <span id="pm-title" style="font-size:15px;font-weight:600;"></span>
+      <button id="pm-close" style="background:none;border:none;color:var(--fg-muted);cursor:pointer;font-size:20px;line-height:1;">×</button>
+    </div>
+    <div style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:10px;font-size:13px;">
+      <div id="pm-date" style="color:var(--fg-muted);font-family:var(--font-mono);font-size:12px;"></div>
+      <div id="pm-meta" style="display:flex;gap:12px;font-family:var(--font-mono);font-size:13px;"></div>
+      <div id="pm-desc" style="line-height:1.5;"></div>
+      <div id="pm-notes" style="color:var(--fg-muted);font-size:12px;line-height:1.5;"></div>
+    </div>
+  </dialog>
 </Shell>
 
 <style is:global>
@@ -271,10 +285,17 @@ import Icon from '../components/Icon.astro';
   .cal-card.cal-card-planned {
     border-style: dashed;
     opacity: 0.75;
-    cursor: default;
+    cursor: pointer;
+  }
+  .cal-card.cal-card-planned:hover {
+    opacity: 1;
+    border-color: var(--border-strong);
   }
   .cal-card.cal-card-planned .cal-card-top {
     opacity: 0.85;
+  }
+  #planned-modal::backdrop {
+    background: rgba(0,0,0,0.4);
   }
 </style>
 
@@ -408,17 +429,24 @@ import Icon from '../components/Icon.astro';
     const grid: string[] = [];
     grid.push(buildHeader());
 
-    // Newest week first (today at top).
-    for (let i = weeksBack - 1; i >= 0; i--) {
+    // Future weeks first (top), then today, then past (bottom).
+    // totalWeeks = past weeks + today + 4 future.
+    const FUTURE_WEEKS = 4;
+    const totalWeeks = weeksBack + FUTURE_WEEKS;
+    for (let i = totalWeeks - 1; i >= 0; i--) {
       const weekMonday = new Date(monday);
       weekMonday.setUTCDate(monday.getUTCDate() + i * 7);
       const weekSunday = new Date(weekMonday);
       weekSunday.setUTCDate(weekMonday.getUTCDate() + 6);
-      grid.push(buildWeek(weekMonday, weekSunday, byDay, plannedByDay, pmcByDate, wellByDate, today));
+      const isTodayWeek = i === weeksBack - 1;
+      grid.push(buildWeek(weekMonday, weekSunday, byDay, plannedByDay, pmcByDate, wellByDate, today, isTodayWeek));
     }
 
     wrap.innerHTML = `<div class="cal-grid">${grid.join('')}</div>`;
     subtitle.textContent = `${user.handle} · ${weeksBack} weeks · ${acts.length} activities`;
+
+    // Scroll today's week into view (future weeks remain reachable above).
+    document.getElementById('cal-today-week')?.scrollIntoView({ behavior: 'instant', block: 'start' });
   }
 
   function buildHeader(): string {
@@ -437,11 +465,14 @@ import Icon from '../components/Icon.astro';
     pmcByDate: Map<string, PmcDay>,
     wellByDate: Map<string, WellnessDay>,
     today: string,
+    isTodayWeek: boolean,
   ): string {
     let totalSec = 0;
     let totalDist = 0;
     let totalKj = 0;
     let totalLoad = 0;
+    let plannedSec = 0;
+    let plannedCount = 0;
     const sportTimes = new Map<string, number>();
     const sportDists = new Map<string, number>();
     const dayCells: string[] = [];
@@ -451,6 +482,7 @@ import Icon from '../components/Icon.astro';
       day.setUTCDate(monday.getUTCDate() + d);
       const key = isoDate(day);
       const acts = byDay.get(key) ?? [];
+      const dayPlanned = plannedByDay.get(key) ?? [];
       for (const a of acts) {
         totalSec += a.totalSeconds;
         if (a.distanceM) totalDist += a.distanceM;
@@ -460,7 +492,11 @@ import Icon from '../components/Icon.astro';
         if (a.distanceM)
           sportDists.set(a.sport, (sportDists.get(a.sport) ?? 0) + a.distanceM);
       }
-      dayCells.push(buildDay(day, key, acts, plannedByDay.get(key) ?? [], wellByDate.get(key) ?? null, today));
+      for (const p of dayPlanned) {
+        plannedSec += p.durationMin * 60;
+        plannedCount++;
+      }
+      dayCells.push(buildDay(day, key, acts, dayPlanned, wellByDate.get(key) ?? null, today));
     }
 
     const sundayKey = isoDate(sunday);
@@ -468,12 +504,16 @@ import Icon from '../components/Icon.astro';
     const isoWeek = isoWeekNumber(sunday);
 
     return `
-      <div class="cal-week">
+      <div class="cal-week"${isTodayWeek ? ' id="cal-today-week"' : ''}>
         <div class="cal-week-label">
           <span class="metric-label" style="color: var(--fg-muted);">Week</span>
           <strong>${isoWeek}</strong>
         </div>
         <div class="cal-week-totals">
+          ${plannedCount > 0 ? `
+          <span class="k" style="color: var(--fg-subtle);">Planned</span>
+          <span style="color: var(--fg-subtle);">${formatHm(plannedSec)} · ${plannedCount}</span>
+          ` : ''}
           <span class="k">Time</span>
           <span>${formatHm(totalSec) || '—'}</span>
           <span class="k">Dist</span>
@@ -573,8 +613,15 @@ import Icon from '../components/Icon.astro';
     const dur = p.durationMin ? `${p.durationMin}m` : '';
     const zone = p.targetZone ? escape(p.targetZone.toUpperCase()) : '';
     const label = p.description ? escape(p.description) : escape(sentenceCase(sport));
+    const dataAttrs = `data-planned-id="${escape(p.id)}"
+      data-planned-sport="${escape(sport)}"
+      data-planned-dur="${p.durationMin}"
+      data-planned-zone="${escape(p.targetZone ?? '')}"
+      data-planned-desc="${escape(p.description ?? '')}"
+      data-planned-notes="${escape(p.notes ?? '')}"
+      data-planned-date="${escape(p.scheduledDate)}"`;
     return `
-      <div class="cal-card cal-card-planned ${sportClass}">
+      <div class="cal-card cal-card-planned ${sportClass}" role="button" tabindex="0" ${dataAttrs}>
         <div class="cal-card-top">
           <span class="sport">${sportGlyph(sport)}</span>
           ${dur ? `<span class="duration">${escape(dur)}</span>` : ''}
@@ -628,8 +675,7 @@ import Icon from '../components/Icon.astro';
   // ---------------- helpers ----------------
 
   function computeRange(n: number): { weeksBack: number; monday: Date; sunday: Date } {
-    // Anchor "now" to UTC midnight, then walk back to the Monday of the
-    // week n-1 weeks before this one. Returns inclusive range.
+    const FUTURE_WEEKS = 4;
     const now = new Date();
     const todayUtc = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
@@ -639,8 +685,9 @@ import Icon from '../components/Icon.astro';
     thisMonday.setUTCDate(todayUtc.getUTCDate() - dow);
     const monday = new Date(thisMonday);
     monday.setUTCDate(thisMonday.getUTCDate() - (n - 1) * 7);
+    // Extend sunday to cover future weeks so the API fetch includes them.
     const sunday = new Date(thisMonday);
-    sunday.setUTCDate(thisMonday.getUTCDate() + 6);
+    sunday.setUTCDate(thisMonday.getUTCDate() + FUTURE_WEEKS * 7 + 6);
     return { weeksBack: n, monday, sunday };
   }
 
@@ -707,4 +754,35 @@ import Icon from '../components/Icon.astro';
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
   }
+
+  // Planned workout modal
+  const modal = document.getElementById('planned-modal') as HTMLDialogElement;
+  document.getElementById('pm-close')!.addEventListener('click', () => modal.close());
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.close(); });
+
+  document.addEventListener('click', (e) => {
+    const card = (e.target as HTMLElement).closest('[data-planned-id]') as HTMLElement | null;
+    if (!card) return;
+    const sport = card.dataset.plannedSport ?? '';
+    const dur = card.dataset.plannedDur ?? '';
+    const zone = card.dataset.plannedZone ?? '';
+    const desc = card.dataset.plannedDesc ?? '';
+    const notes = card.dataset.plannedNotes ?? '';
+    const date = card.dataset.plannedDate ?? '';
+
+    document.getElementById('pm-title')!.textContent = desc || sentenceCase(sport);
+    document.getElementById('pm-date')!.textContent = date;
+    const metaParts: string[] = [];
+    if (dur) metaParts.push(`${dur}m`);
+    if (zone) metaParts.push(zone.toUpperCase());
+    document.getElementById('pm-meta')!.textContent = metaParts.join(' · ');
+    document.getElementById('pm-desc')!.textContent = desc && desc !== document.getElementById('pm-title')!.textContent ? desc : '';
+    document.getElementById('pm-notes')!.textContent = notes ? `Notes: ${notes}` : '';
+    modal.showModal();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    const card = document.activeElement?.closest('[data-planned-id]') as HTMLElement | null;
+    if (card && (e.key === 'Enter' || e.key === ' ')) card.click();
+  });
 </script>
