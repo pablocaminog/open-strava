@@ -65,6 +65,10 @@ const jsonLd = [
       priceCurrency: 'USD',
     },
     license: 'https://polyformproject.org/licenses/noncommercial/1.0.0/',
+    sameAs: [
+      'https://github.com/pablocaminog/pacelore',
+      'https://x.com/pacelore_app',
+    ],
   },
   {
     '@context': 'https://schema.org',
@@ -80,7 +84,7 @@ const jsonLd = [
 
 <Marketing
   title="pacelore"
-  description="Source-available training platform. TSS, NP, IF, peak power curves, GAP, decoupling, CTL/ATL/TSB. Connect Garmin or Strava, import your full history, own your data. Free for athletes, forever."
+  description="Free Strava + TrainingPeaks alternative. TSS, NP, IF, GAP, CTL/ATL/TSB — all free, forever. Source-available, on Cloudflare's edge."
   jsonLd={jsonLd}
 >
   <div class="marketing-content">
@@ -548,7 +552,7 @@ const jsonLd = [
     if (!document.cookie) return; // no cookies → not logged in, no need to fetch
     fetch('/api/v1/auth/me', { credentials: 'same-origin', redirect: 'manual' })
       .then((r) => {
-        if (r.ok) location.replace('/feed');
+        if (r.ok) location.replace('/home');
       })
       .catch(() => {
         /* offline or auth probe failed — leave the marketing page rendered */

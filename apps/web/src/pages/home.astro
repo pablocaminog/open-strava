@@ -1,0 +1,362 @@
+---
+import Shell from '../layouts/Shell.astro';
+---
+
+<Shell title="Home" active="home">
+  <div class="stack" style="gap: 24px;">
+
+    <div>
+      <h1 id="home-greeting" class="h1" style="font-size: 28px;">—</h1>
+      <p id="home-date" class="muted body-sm" style="margin-top: 4px;"></p>
+    </div>
+
+    <!-- Fitness / Fatigue / Form tiles -->
+    <div id="home-metrics" class="grid-tiles grid-cols-3"></div>
+
+    <!-- Up next -->
+    <div class="panel">
+      <div class="panel-header">
+        <h3 class="h3" style="font-size: 16px;">Up next</h3>
+        <a href="/calendar" class="btn btn-secondary btn-sm" style="font-size: 12px;">Full calendar →</a>
+      </div>
+      <div id="home-planned" style="padding: 16px 16px 8px; display: flex; gap: 12px; flex-wrap: wrap; min-height: 60px;">
+        <span class="muted body-sm" style="align-self: center;">Loading…</span>
+      </div>
+    </div>
+
+    <!-- Last activity -->
+    <div class="panel">
+      <div class="panel-header">
+        <h3 class="h3" style="font-size: 16px;">Last activity</h3>
+        <a href="/upload" class="btn btn-secondary btn-sm" style="font-size: 12px;">All activities →</a>
+      </div>
+      <div id="home-last-activity" style="padding: 16px; min-height: 60px;">
+        <span class="muted body-sm">Loading…</span>
+      </div>
+    </div>
+
+    <!-- PMC chart -->
+    <div class="panel">
+      <div class="panel-header">
+        <h3 class="h3" style="font-size: 16px;">Fitness · Fatigue · Form</h3>
+        <a href="/dashboard" class="btn btn-secondary btn-sm" style="font-size: 12px;">Full PMC →</a>
+      </div>
+      <div class="panel-body">
+        <div id="home-pmc-chart" style="width: 100%;"></div>
+      </div>
+    </div>
+
+  </div>
+</Shell>
+
+<style>
+  .planned-card {
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    min-width: 140px;
+    max-width: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: var(--surface);
+    cursor: pointer;
+    transition: border-color 120ms;
+    margin-bottom: 8px;
+  }
+  .planned-card:hover { border-color: var(--border-strong); }
+  .planned-card .pc-date {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .planned-card .pc-sport {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .planned-card .pc-meta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-muted);
+  }
+  .last-act {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .last-act .la-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--fg);
+    text-decoration: none;
+  }
+  .last-act .la-name:hover { text-decoration: underline; }
+  .last-act .la-meta {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg-muted);
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .la-stats {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    margin-top: 4px;
+  }
+  .la-stats .k {
+    font-size: 10px;
+    color: var(--fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-right: 3px;
+  }
+</style>
+
+<script>
+  import uPlot from 'uplot';
+  import 'uplot/dist/uPlot.min.css';
+
+  type Activity = {
+    id: string; sport: string; name: string | null;
+    startedAt: number; totalSeconds: number; distanceM: number | null;
+    hrAvg: number | null; powerAvg: number | null; np: number | null; tss: number | null;
+    source: string; externalSource: string | null;
+  };
+  type PlannedWorkout = {
+    id: string; scheduledDate: string; sport: string; durationMin: number;
+    targetZone: string | null; description: string | null; notes: string | null;
+  };
+  type PmcDay = { date: string; ctl: number; atl: number; tsb: number; tss: number };
+
+  let user: { id: string; handle: string } | null = null;
+
+  init().catch(console.error);
+
+  async function init() {
+    const meRes = await fetch('/api/v1/auth/me', { credentials: 'include' });
+    if (!meRes.ok) {
+      document.getElementById('home-greeting')!.textContent = 'Welcome';
+      document.getElementById('home-date')!.innerHTML =
+        '<a href="/login" style="color:var(--fg);text-decoration:underline;">Sign in</a> to see your training home.';
+      return;
+    }
+    user = ((await meRes.json()) as { user: typeof user }).user;
+
+    const now = new Date();
+    const todayIso = fmtDate(now);
+    const in14 = fmtDate(addDays(now, 14));
+    const ago60 = fmtDate(addDays(now, -60));
+    const ago30 = fmtDate(addDays(now, -30));
+
+    const hour = now.getHours();
+    const greeting =
+      hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    document.getElementById('home-greeting')!.textContent = `${greeting}, ${user!.handle}`;
+    document.getElementById('home-date')!.textContent = now.toLocaleDateString(undefined, {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
+
+    const [actsRes, pmcRes, plannedRes] = await Promise.all([
+      fetch(`/api/v1/me/calendar/activities?from=${ago30}&to=${todayIso}`, { credentials: 'include' }),
+      fetch(`/api/v1/athletes/${user!.id}/pmc?from=${ago60}&to=${todayIso}`, { credentials: 'include' }),
+      fetch(`/api/v1/planned-workouts?from=${todayIso}&to=${in14}`, { credentials: 'include' }),
+    ]);
+
+    const acts = actsRes.ok ? ((await actsRes.json()) as { items: Activity[] }).items : [];
+    const pmc = pmcRes.ok ? ((await pmcRes.json()) as { days: PmcDay[] }).days : [];
+    const planned = plannedRes.ok ? ((await plannedRes.json()) as { items: PlannedWorkout[] }).items : [];
+
+    renderMetrics(pmc);
+    renderPlanned(planned);
+    renderLastActivity(acts);
+    renderPmcChart(pmc);
+  }
+
+  function renderMetrics(pmc: PmcDay[]) {
+    const el = document.getElementById('home-metrics')!;
+    if (!pmc.length) { el.innerHTML = ''; return; }
+    const last = pmc[pmc.length - 1]!;
+    const ctlDelta = last.ctl - (pmc[Math.max(0, pmc.length - 8)]?.ctl ?? last.ctl);
+    const form = last.tsb < -10 ? 'Loaded' : last.tsb > 10 ? 'Fresh' : 'Neutral';
+    el.innerHTML = [
+      { label: 'Fitness', value: last.ctl.toFixed(1), sub: `${ctlDelta >= 0 ? '+' : ''}${ctlDelta.toFixed(1)} this week`, neg: ctlDelta < 0 },
+      { label: 'Fatigue', value: last.atl.toFixed(1), sub: '', neg: false },
+      { label: 'Form', value: last.tsb.toFixed(1), sub: form, neg: last.tsb < -10 },
+    ].map(t => `
+      <div class="tile">
+        <span class="label">${t.label}</span>
+        <span class="v">${t.value}</span>
+        ${t.sub ? `<span class="delta ${t.neg ? 'neg' : ''}">${t.sub}</span>` : ''}
+      </div>`).join('');
+  }
+
+  function renderPlanned(planned: PlannedWorkout[]) {
+    const el = document.getElementById('home-planned')!;
+    if (!planned.length) {
+      el.innerHTML = '<span class="muted body-sm" style="align-self:center;">No sessions scheduled in the next 14 days.</span>';
+      return;
+    }
+    el.innerHTML = planned.slice(0, 7).map(p => {
+      const dateLabel = new Date(p.scheduledDate + 'T00:00:00Z').toLocaleDateString(undefined, {
+        weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC',
+      });
+      const meta = [p.durationMin ? `${p.durationMin}m` : '', p.targetZone?.toUpperCase() ?? ''].filter(Boolean).join(' · ');
+      return `
+        <div class="planned-card"
+          data-planned-id="${esc(p.id)}"
+          data-planned-sport="${esc(p.sport)}"
+          data-planned-dur="${p.durationMin}"
+          data-planned-zone="${esc(p.targetZone ?? '')}"
+          data-planned-desc="${esc(p.description ?? '')}"
+          data-planned-notes="${esc(p.notes ?? '')}"
+          data-planned-date="${esc(p.scheduledDate)}">
+          <span class="pc-date">${esc(dateLabel)}</span>
+          <span class="pc-sport">${esc(p.description || sentenceCase(p.sport))}</span>
+          <span class="pc-meta">${esc(meta)}</span>
+        </div>`;
+    }).join('');
+
+    el.addEventListener('click', (e) => {
+      const card = (e.target as HTMLElement).closest('[data-planned-id]') as HTMLElement | null;
+      if (!card) return;
+      const modal = document.getElementById('planned-modal') as HTMLDialogElement | null;
+      if (!modal) return;
+      const d = card.dataset;
+      document.getElementById('pm-title')!.textContent = d.plannedDesc || sentenceCase(d.plannedSport ?? '');
+      document.getElementById('pm-date')!.textContent = d.plannedDate ?? '';
+      const metaParts = [d.plannedDur ? `${d.plannedDur}m` : '', d.plannedZone?.toUpperCase() ?? ''].filter(Boolean);
+      document.getElementById('pm-meta')!.textContent = metaParts.join(' · ');
+      document.getElementById('pm-desc')!.textContent = '';
+      document.getElementById('pm-notes')!.textContent = d.plannedNotes ? `Notes: ${d.plannedNotes}` : '';
+      modal.showModal();
+    });
+  }
+
+  function renderLastActivity(acts: Activity[]) {
+    const el = document.getElementById('home-last-activity')!;
+    const act = [...acts].sort((a, b) => b.startedAt - a.startedAt)[0];
+    if (!act) {
+      el.innerHTML = '<span class="muted body-sm">No activities yet. <a href="/upload" style="color:var(--fg);text-decoration:underline;">Upload one.</a></span>';
+      return;
+    }
+    const date = new Date(act.startedAt * 1000).toLocaleDateString(undefined, {
+      weekday: 'long', month: 'short', day: 'numeric',
+    });
+    const dur = fmtHm(act.totalSeconds);
+    const dist = act.distanceM != null ? `${(act.distanceM / 1000).toFixed(1)} km` : null;
+    const stats: string[] = [];
+    if (dur) stats.push(`<span><span class="k">Time</span>${dur}</span>`);
+    if (dist) stats.push(`<span><span class="k">Dist</span>${dist}</span>`);
+    if (act.hrAvg) stats.push(`<span><span class="k">HR</span>${Math.round(act.hrAvg)}</span>`);
+    if (act.powerAvg) stats.push(`<span><span class="k">Pwr</span>${Math.round(act.powerAvg)}w</span>`);
+    if (act.np) stats.push(`<span><span class="k">NP</span>${Math.round(act.np)}w</span>`);
+    if (act.tss) stats.push(`<span><span class="k">TSS</span>${act.tss.toFixed(0)}</span>`);
+    el.innerHTML = `
+      <div class="last-act">
+        <a class="la-name" href="/activity/${esc(act.id)}">${esc(act.name ?? sentenceCase(act.sport))}</a>
+        <div class="la-meta">
+          <span>${esc(date)}</span>
+          <span>${esc(sentenceCase(act.sport))}</span>
+        </div>
+        ${stats.length ? `<div class="la-stats">${stats.join('')}</div>` : ''}
+      </div>`;
+  }
+
+  function renderPmcChart(pmc: PmcDay[]) {
+    const el = document.getElementById('home-pmc-chart')!;
+    if (!pmc.length) { el.innerHTML = '<span class="muted body-sm" style="padding:16px;display:block;">No data yet.</span>'; return; }
+    el.innerHTML = '';
+    const t = pmc.map(d => Math.floor(Date.parse(d.date) / 1000));
+    const ctl = pmc.map(d => d.ctl);
+    const atl = pmc.map(d => d.atl);
+    const tsb = pmc.map(d => d.tsb);
+    const c = axisColors();
+    new uPlot({
+      width: el.clientWidth || 860,
+      height: 220,
+      cursor: { drag: { x: true, y: false } },
+      scales: { x: { time: true } },
+      axes: [
+        { stroke: c.stroke, grid: { stroke: c.grid, width: 1 }, ticks: { stroke: c.ticks, width: 1, size: 4 }, font: '12px ui-monospace,monospace', size: 48, space: 80 },
+        { stroke: c.stroke, grid: { stroke: c.grid, width: 1 }, ticks: { stroke: c.ticks, width: 1, size: 4 }, font: '12px ui-monospace,monospace', size: 52 },
+      ],
+      series: [
+        {},
+        { label: 'Fitness', stroke: '#C8FA1F', width: 2 },
+        { label: 'Fatigue', stroke: 'var(--ink-700)', width: 1.5, dash: [4, 3] },
+        { label: 'Form', stroke: 'oklch(0.55 0.11 150)', width: 1.25 },
+      ],
+    }, [t, ctl, atl, tsb], el);
+  }
+
+  function axisColors() {
+    const dark =
+      document.documentElement.dataset.theme === 'dark' ||
+      document.documentElement.classList.contains('dark') ||
+      (document.documentElement.dataset.theme !== 'light' &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches);
+    return dark
+      ? { stroke: '#a8a8a3', grid: '#3a3a36', ticks: '#525250' }
+      : { stroke: '#525250', grid: '#e0e0d8', ticks: '#a8a8a3' };
+  }
+
+  // Planned workout modal (reuse calendar's modal if present, else noop)
+  function openPlannedModal(card: HTMLElement) {
+    const modal = document.getElementById('planned-modal') as HTMLDialogElement | null;
+    if (!modal) return;
+    modal.showModal();
+  }
+  void openPlannedModal; // referenced inline above
+
+  function addDays(d: Date, n: number): Date {
+    const r = new Date(d);
+    r.setUTCDate(r.getUTCDate() + n);
+    return r;
+  }
+  function fmtDate(d: Date): string {
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+  }
+  function fmtHm(sec: number): string {
+    if (!sec) return '';
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    if (h === 0) return `${m}m`;
+    if (m === 0) return `${h}h`;
+    return `${h}h${String(m).padStart(2, '0')}`;
+  }
+  function sentenceCase(s: string): string {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  function esc(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+</script>
+
+<!-- Planned workout detail modal (standalone, mirrors calendar's) -->
+<dialog id="planned-modal" style="border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--fg);padding:0;max-width:380px;width:100%;">
+  <div style="padding:20px 20px 8px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);">
+    <span id="pm-title" style="font-size:15px;font-weight:600;"></span>
+    <button id="pm-close" style="background:none;border:none;color:var(--fg-muted);cursor:pointer;font-size:20px;line-height:1;">×</button>
+  </div>
+  <div style="padding:16px 20px 20px;display:flex;flex-direction:column;gap:10px;font-size:13px;">
+    <div id="pm-date" style="color:var(--fg-muted);font-family:var(--font-mono);font-size:12px;"></div>
+    <div id="pm-meta" style="font-family:var(--font-mono);font-size:13px;"></div>
+    <div id="pm-desc" style="line-height:1.5;"></div>
+    <div id="pm-notes" style="color:var(--fg-muted);font-size:12px;line-height:1.5;"></div>
+  </div>
+</dialog>
+<style>
+  #planned-modal::backdrop { background: rgba(0,0,0,0.4); }
+</style>
+<script>
+  const _modal = document.getElementById('planned-modal') as HTMLDialogElement;
+  document.getElementById('pm-close')?.addEventListener('click', () => _modal?.close());
+  _modal?.addEventListener('click', (e) => { if (e.target === _modal) _modal.close(); });
+</script>

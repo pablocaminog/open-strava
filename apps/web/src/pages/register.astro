@@ -103,7 +103,7 @@ import Wordmark from '../components/Wordmark.astro';
 
       status.textContent = 'Account created — redirecting…';
       const next = new URL(window.location.href).searchParams.get('next');
-      window.location.href = next && next.startsWith('/') ? next : '/dashboard';
+      window.location.href = next && next.startsWith('/') ? next : '/home';
     } catch (err) {
       status.textContent = `Couldn't create account: ${(err as Error).message}`;
       submit.disabled = false;

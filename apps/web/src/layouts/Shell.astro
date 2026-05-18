@@ -7,6 +7,7 @@ interface Props {
   title?: string;
   description?: string;
   active?:
+    | 'home'
     | 'feed'
     | 'activities'
     | 'calendar'
@@ -25,6 +26,7 @@ interface Props {
 const { title, description, active = '' } = Astro.props;
 
 const navTraining: { id: string; label: string; href: string; icon: string }[] = [
+  { id: 'home', label: 'Home', href: '/home', icon: 'home' },
   { id: 'feed', label: 'Feed', href: '/feed', icon: 'rss' },
   { id: 'activities', label: 'Activities', href: '/upload', icon: 'activity' },
   { id: 'calendar', label: 'Calendar', href: '/calendar', icon: 'calendar' },
