@@ -68,6 +68,20 @@ export function buildApp(): Hono<{ Bindings: Env }> {
   app.route('/api/v1', roadmapRoutes);
   app.route('/mcp', mcpRoutes);
 
+  // Root-level OAuth discovery — Claude tries this before the path-based one.
+  app.get('/.well-known/oauth-authorization-server', (c) => {
+    const origin = new URL(c.req.url).origin;
+    return c.json({
+      issuer: `${origin}/mcp`,
+      authorization_endpoint: `${origin}/mcp/authorize`,
+      token_endpoint: `${origin}/mcp/token`,
+      response_types_supported: ['code'],
+      grant_types_supported: ['authorization_code'],
+      code_challenge_methods_supported: ['S256'],
+      token_endpoint_auth_methods_supported: ['none'],
+    });
+  });
+
   app.notFound((c) => c.json({ error: 'not_found', status: 404 }, 404));
   return app;
 }
