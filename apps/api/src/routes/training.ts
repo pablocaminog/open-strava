@@ -285,6 +285,103 @@ trainingRoutes.delete('/me/calendar/:id', async (c) => {
   return c.json({ ok: true });
 });
 
+// Planned workouts (ad-hoc, inline session details) ----------------
+
+interface PlannedWorkoutBody {
+  scheduledDate?: string;
+  sport?: string;
+  durationMin?: number;
+  targetZone?: string;
+  description?: string;
+  notes?: string;
+  athleteId?: string;
+}
+
+trainingRoutes.post('/planned-workouts', async (c) => {
+  const session = c.get('session');
+  const body = (await c.req.json()) as PlannedWorkoutBody;
+
+  if (!body.scheduledDate || !/^\d{4}-\d{2}-\d{2}$/.test(body.scheduledDate)) {
+    throw new HTTPException(400, { message: 'scheduledDate (YYYY-MM-DD) required' });
+  }
+  if (!body.sport || !SPORTS.has(body.sport)) {
+    throw new HTTPException(400, { message: 'invalid sport' });
+  }
+  if (typeof body.durationMin !== 'number' || body.durationMin < 1) {
+    throw new HTTPException(400, { message: 'durationMin ≥ 1 required' });
+  }
+
+  const targetAthlete = body.athleteId ?? session.userId;
+  if (targetAthlete !== session.userId) {
+    const ok = await isCoachOf(c.env, session.userId, targetAthlete);
+    if (!ok) throw new HTTPException(403, { message: 'not your athlete' });
+  }
+
+  const id = uuidv7();
+  const sessionJson = JSON.stringify({
+    sport: body.sport,
+    durationMin: body.durationMin,
+    ...(body.targetZone != null ? { targetZone: body.targetZone } : {}),
+    ...(body.description != null ? { description: body.description } : {}),
+  });
+
+  await c.env.DB.prepare(
+    `INSERT INTO planned_workouts (id, athlete_id, scheduled_date, notes, session_json, assigned_by, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, unixepoch())`,
+  )
+    .bind(id, targetAthlete, body.scheduledDate, body.notes ?? null, sessionJson, session.userId)
+    .run();
+
+  return c.json({ id }, 201);
+});
+
+trainingRoutes.get('/planned-workouts', async (c) => {
+  const session = c.get('session');
+  const url = new URL(c.req.url);
+  const from = url.searchParams.get('from');
+  const to = url.searchParams.get('to');
+  if (!from || !to) {
+    throw new HTTPException(400, { message: 'from and to required (YYYY-MM-DD)' });
+  }
+  const athleteId = url.searchParams.get('athleteId') ?? session.userId;
+  if (athleteId !== session.userId) {
+    const ok = await isCoachOf(c.env, session.userId, athleteId);
+    if (!ok) throw new HTTPException(403, { message: 'not your athlete' });
+  }
+
+  const rows = await c.env.DB.prepare(
+    `SELECT id, scheduled_date AS scheduledDate, notes,
+            workout_id AS workoutId, completed_activity_id AS completedActivityId,
+            compliance_score AS complianceScore, session_json AS sessionJson,
+            created_at AS createdAt
+       FROM planned_workouts
+      WHERE athlete_id = ?
+        AND scheduled_date BETWEEN ? AND ?
+      ORDER BY scheduled_date ASC`,
+  )
+    .bind(athleteId, from, to)
+    .all();
+
+  const items = (rows.results ?? []).map((r: Record<string, unknown>) => {
+    const { sessionJson, ...rest } = r;
+    const parsed = typeof sessionJson === 'string' ? JSON.parse(sessionJson) : {};
+    return { ...rest, ...parsed };
+  });
+
+  return c.json({ items });
+});
+
+trainingRoutes.delete('/planned-workouts/:id', async (c) => {
+  const id = c.req.param('id');
+  const session = c.get('session');
+  await c.env.DB.prepare(
+    `DELETE FROM planned_workouts WHERE id = ? AND (athlete_id = ? OR assigned_by = ?)`,
+  )
+    .bind(id, session.userId, session.userId)
+    .run();
+  return c.json({ ok: true });
+});
+
 // Coach links --------------------------------------------------------
 trainingRoutes.post('/me/coaches/invite', async (c) => {
   const session = c.get('session');
