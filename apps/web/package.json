@@ -12,6 +12,7 @@
     "test": "echo \"web tests — wired with feature tasks\" && exit 0"
   },
   "dependencies": {
+    "@pacelore/workout-csv": "workspace:*",
     "@astrojs/cloudflare": "12.6.10",
     "@astrojs/tailwind": "5.1.4",
     "@simplewebauthn/browser": "11.0.0",
