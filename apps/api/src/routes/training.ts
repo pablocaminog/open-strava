@@ -307,7 +307,7 @@ trainingRoutes.post('/planned-workouts', async (c) => {
   if (!body.sport || !SPORTS.has(body.sport)) {
     throw new HTTPException(400, { message: 'invalid sport' });
   }
-  if (typeof body.durationMin !== 'number' || body.durationMin < 1) {
+  if (typeof body.durationMin !== 'number' || !Number.isInteger(body.durationMin) || body.durationMin < 1) {
     throw new HTTPException(400, { message: 'durationMin ≥ 1 required' });
   }
 
@@ -343,6 +343,12 @@ trainingRoutes.get('/planned-workouts', async (c) => {
   if (!from || !to) {
     throw new HTTPException(400, { message: 'from and to required (YYYY-MM-DD)' });
   }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    throw new HTTPException(400, { message: 'from and to must be YYYY-MM-DD' });
+  }
+  if (from > to) {
+    throw new HTTPException(400, { message: 'from must be <= to' });
+  }
   const athleteId = url.searchParams.get('athleteId') ?? session.userId;
   if (athleteId !== session.userId) {
     const ok = await isCoachOf(c.env, session.userId, athleteId);
@@ -365,7 +371,7 @@ trainingRoutes.get('/planned-workouts', async (c) => {
   const items = (rows.results ?? []).map((r: Record<string, unknown>) => {
     const { sessionJson, ...rest } = r;
     const parsed = typeof sessionJson === 'string' ? JSON.parse(sessionJson) : {};
-    return { ...rest, ...parsed };
+    return { ...parsed, ...rest };
   });
 
   return c.json({ items });
