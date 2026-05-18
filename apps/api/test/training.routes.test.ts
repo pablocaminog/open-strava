@@ -247,3 +247,64 @@ describe('DELETE /api/v1/planned-workouts/:id', () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe('POST /api/v1/workouts with csvText', () => {
+  it('creates a workout from csvText', async () => {
+    const { env, cookie } = await authedEnv();
+    const app = buildApp();
+    const res = await app.request(
+      '/api/v1/workouts',
+      {
+        method: 'POST',
+        headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          csvText: 'Z2 Ride, cycling, Easy day\nWarm up, 600, 80-150W\nMain Block, 2000, 170W\nCool down, 600',
+        }),
+      },
+      env,
+    );
+    expect(res.status).toBe(201);
+    const data = (await res.json()) as { id: string };
+    expect(typeof data.id).toBe('string');
+  });
+
+  it('returns 400 on invalid csvText', async () => {
+    const { env, cookie } = await authedEnv();
+    const app = buildApp();
+    const res = await app.request(
+      '/api/v1/workouts',
+      {
+        method: 'POST',
+        headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csvText: 'Bad, notasport\nWork, 600' }),
+      },
+      env,
+    );
+    expect(res.status).toBe(400);
+    const text = await res.text();
+    expect(text).toMatch(/sport/i);
+  });
+});
+
+describe('POST /api/v1/planned-workouts with csvText', () => {
+  it('creates a workout and schedules it from csvText', async () => {
+    const { env, cookie } = await authedEnv();
+    const app = buildApp();
+    const res = await app.request(
+      '/api/v1/planned-workouts',
+      {
+        method: 'POST',
+        headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          csvText: 'Threshold, cycling\nWarm up, 600\nWork, 1200, 95%\nCool down, 300',
+          scheduledDate: '2026-06-15',
+        }),
+      },
+      env,
+    );
+    expect(res.status).toBe(201);
+    const data = (await res.json()) as { id: string; workoutId: string };
+    expect(typeof data.id).toBe('string');
+    expect(typeof data.workoutId).toBe('string');
+  });
+});

@@ -28,6 +28,7 @@ import { uuidv7 } from '../util/uuid.js';
 import { workoutToFit, workoutToZwo, type Workout } from '../integrations/workout-export.js';
 import type { RaceType, ScheduleGrid } from '@pacelore/planner';
 import { buildWeekPlans, scheduleWeek, auditPlan, TEMPLATES } from '@pacelore/planner';
+import { parseWorkoutCsv, WorkoutCsvError } from '@pacelore/workout-csv';
 
 export const trainingRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 trainingRoutes.use('*', requireSession());
@@ -56,8 +57,29 @@ interface WorkoutBody {
 }
 
 trainingRoutes.post('/workouts', async (c) => {
-  const body = (await c.req.json()) as WorkoutBody;
+  const rawBody = (await c.req.json()) as WorkoutBody & { csvText?: string };
   const session = c.get('session');
+
+  let body: WorkoutBody;
+  if (rawBody.csvText) {
+    try {
+      const parsed = parseWorkoutCsv(rawBody.csvText);
+      body = {
+        name: parsed.name,
+        sport: parsed.sport,
+        description: parsed.description,
+        steps: parsed.steps as WorkoutBody['steps'],
+      };
+    } catch (e) {
+      if (e instanceof WorkoutCsvError) {
+        throw new HTTPException(400, { message: e.message });
+      }
+      throw e;
+    }
+  } else {
+    body = rawBody;
+  }
+
   if (!body.name || !body.sport || !SPORTS.has(body.sport)) {
     throw new HTTPException(400, { message: 'name + sport required' });
   }
@@ -295,11 +317,57 @@ interface PlannedWorkoutBody {
   description?: string;
   notes?: string;
   athleteId?: string;
+  csvText?: string;
 }
 
 trainingRoutes.post('/planned-workouts', async (c) => {
   const session = c.get('session');
   const body = (await c.req.json()) as PlannedWorkoutBody;
+
+  // CSV path: parse, save a workout record, then schedule it.
+  if (body.csvText) {
+    if (!body.scheduledDate || !/^\d{4}-\d{2}-\d{2}$/.test(body.scheduledDate)) {
+      throw new HTTPException(400, { message: 'scheduledDate (YYYY-MM-DD) required' });
+    }
+    let parsed;
+    try {
+      parsed = parseWorkoutCsv(body.csvText);
+    } catch (e) {
+      if (e instanceof WorkoutCsvError) throw new HTTPException(400, { message: e.message });
+      throw e;
+    }
+    const targetAthlete = body.athleteId ?? session.userId;
+    if (targetAthlete !== session.userId) {
+      const ok = await isCoachOf(c.env, session.userId, targetAthlete);
+      if (!ok) throw new HTTPException(403, { message: 'not your athlete' });
+    }
+    const totalSec = parsed.steps.reduce((s, st) => s + st.durationSec, 0);
+    const { tss, duration } = estimateLoad(parsed.steps as WorkoutBody['steps']);
+    const workoutId = uuidv7();
+    await c.env.DB.prepare(
+      `INSERT INTO workouts (id, athlete_id, name, description, sport, estimated_tss, estimated_duration_sec, steps_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        workoutId,
+        session.userId,
+        parsed.name,
+        parsed.description ?? null,
+        parsed.sport,
+        tss,
+        duration ?? totalSec,
+        JSON.stringify({ steps: parsed.steps }),
+      )
+      .run();
+    const pwId = uuidv7();
+    await c.env.DB.prepare(
+      `INSERT INTO planned_workouts (id, athlete_id, workout_id, scheduled_date, notes, assigned_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, unixepoch())`,
+    )
+      .bind(pwId, targetAthlete, workoutId, body.scheduledDate, body.notes ?? null, session.userId)
+      .run();
+    return c.json({ id: pwId, workoutId }, 201);
+  }
 
   if (!body.scheduledDate || !/^\d{4}-\d{2}-\d{2}$/.test(body.scheduledDate)) {
     throw new HTTPException(400, { message: 'scheduledDate (YYYY-MM-DD) required' });

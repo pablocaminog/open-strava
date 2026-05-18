@@ -761,19 +761,27 @@ export class FakeD1 implements D1Database {
       ];
     }
     if (trimmed.startsWith('INSERT INTO planned_workouts')) {
-      const [id, athlete_id, scheduled_date, notes, session_json, assigned_by] = params;
-      this.plannedWorkouts.push({
-        id,
-        athlete_id,
-        scheduled_date,
-        notes: notes ?? null,
-        session_json: session_json ?? null,
+      // Parse column names from SQL to handle different INSERT shapes.
+      const colMatch = trimmed.match(/\(([^)]+)\)\s+VALUES/);
+      const cols = colMatch
+        ? colMatch[1].split(',').map((c) => c.trim())
+        : ['id', 'athlete_id', 'scheduled_date', 'notes', 'session_json', 'assigned_by'];
+      const row: Record<string, unknown> = {
         workout_id: null,
-        assigned_by: assigned_by ?? null,
+        session_json: null,
+        notes: null,
+        assigned_by: null,
         completed_activity_id: null,
         compliance_score: null,
         created_at: Math.floor(Date.now() / 1000),
-      });
+      };
+      // Bind provided params to their columns (skip unixepoch() placeholders — no ?).
+      let pi = 0;
+      for (const col of cols) {
+        if (col === 'created_at') continue; // filled by unixepoch(), no param
+        row[col] = params[pi++] ?? null;
+      }
+      this.plannedWorkouts.push(row);
       return [];
     }
     if (
