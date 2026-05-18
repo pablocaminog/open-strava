@@ -60,10 +60,11 @@ export function parseWorkoutCsv(text: string): ParsedWorkout {
     const blockName = parts[0];
     if (!blockName) throw new WorkoutCsvError('block name is required', rowNum);
 
-    const durationSec = parseInt(parts[1], 10);
-    if (!Number.isInteger(durationSec) || durationSec < 1) {
+    const rawDur = parts[1];
+    const durationSec = parseInt(rawDur, 10);
+    if (!Number.isInteger(durationSec) || durationSec < 1 || rawDur.includes('.')) {
       throw new WorkoutCsvError(
-        `invalid duration "${parts[1]}" — must be positive integer seconds`,
+        `invalid duration "${rawDur}" — must be positive integer seconds`,
         rowNum,
       );
     }
@@ -98,6 +99,7 @@ function parseTarget(raw: string, row: number): CsvTarget {
   if (ftpMatch) {
     const low = parseFloat(ftpMatch[1]);
     const high = ftpMatch[2] ? parseFloat(ftpMatch[2]) : low;
+    if (low > high) throw new WorkoutCsvError(`range "${raw}" is inverted — write low-high`, row);
     return { type: 'ftp_pct', low, high };
   }
 
@@ -106,6 +108,7 @@ function parseTarget(raw: string, row: number): CsvTarget {
   if (hrMatch) {
     const low = parseInt(hrMatch[1], 10);
     const high = hrMatch[2] ? parseInt(hrMatch[2], 10) : low;
+    if (low > high) throw new WorkoutCsvError(`range "${raw}" is inverted — write low-high`, row);
     return { type: 'hr_bpm', low, high };
   }
 
@@ -117,6 +120,7 @@ function parseTarget(raw: string, row: number): CsvTarget {
     const highSec = paceMatch[3]
       ? parseInt(paceMatch[3], 10) * 60 + parseInt(paceMatch[4], 10)
       : lowSec;
+    if (lowSec > highSec) throw new WorkoutCsvError(`pace range "${raw}" is inverted — write fast-slow (e.g. 4:30-5:00)`, row);
     const unit = paceMatch[5]?.toLowerCase() ?? 'km';
     const toKm = (sec: number) => (unit === 'mi' ? Math.round(sec / 1.60934) : sec);
     return { type: 'pace', low: toKm(lowSec), high: toKm(highSec) };
@@ -127,6 +131,7 @@ function parseTarget(raw: string, row: number): CsvTarget {
   if (wattsMatch) {
     const low = parseInt(wattsMatch[1], 10);
     const high = wattsMatch[2] ? parseInt(wattsMatch[2], 10) : low;
+    if (low > high) throw new WorkoutCsvError(`range "${raw}" is inverted — write low-high`, row);
     return { type: 'watts', low, high };
   }
 

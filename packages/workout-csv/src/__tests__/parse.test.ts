@@ -4,7 +4,7 @@ import { parseWorkoutCsv, WorkoutCsvError } from '../index.js';
 describe('parseWorkoutCsv', () => {
   it('parses a minimal cycling workout', () => {
     const result = parseWorkoutCsv(
-      'Z2 Ride, cycling, Easy aerobic\nWarm up, 600, 80-150W\nMain Block, 2000, 170W\nCool down, 600, 150-80W',
+      'Z2 Ride, cycling, Easy aerobic\nWarm up, 600, 80-150W\nMain Block, 2000, 170W\nCool down, 600, 80-150W',
     );
     expect(result.name).toBe('Z2 Ride');
     expect(result.sport).toBe('cycling');
@@ -98,5 +98,22 @@ describe('parseWorkoutCsv', () => {
       '\nZ2 Ride, cycling\n\nWarm up, 600\n\nWork, 2000\n',
     );
     expect(result.steps).toHaveLength(2);
+  });
+
+  it('throws on fractional duration', () => {
+    const err = (() => {
+      try { parseWorkoutCsv('Test, cycling\nWork, 1.5'); }
+      catch (e) { return e as WorkoutCsvError; }
+    })();
+    expect(err).toBeInstanceOf(WorkoutCsvError);
+    expect(err.row).toBe(2);
+  });
+
+  it('throws on inverted watts range', () => {
+    expect(() => parseWorkoutCsv('Test, cycling\nWork, 600, 150-80W')).toThrow(WorkoutCsvError);
+  });
+
+  it('throws on inverted pace range', () => {
+    expect(() => parseWorkoutCsv('Test, running\nWork, 600, 5:00-4:30/km')).toThrow(WorkoutCsvError);
   });
 });
