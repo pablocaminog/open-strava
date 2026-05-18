@@ -268,18 +268,35 @@ const TOOLS = [
 
 // ── MCP JSON-RPC endpoint (auth required) ───────────────────────────────────
 
+function wwwAuthenticate(origin: string) {
+  return `Bearer realm="${origin}/mcp", resource_metadata="${origin}/mcp/.well-known/oauth-authorization-server"`;
+}
+
 // Accept X-Api-Key OR Authorization: Bearer <key> (issued by OAuth flow above).
+// On 401, add WWW-Authenticate so Claude can discover and initiate OAuth.
 mcpRoutes.use('/', async (c, next) => {
+  const origin = new URL(c.req.url).origin;
   const bearer = c.req.header('Authorization')?.match(/^Bearer\s+(.+)$/i)?.[1];
   if (bearer) {
-    // Inject as a virtual X-Api-Key header by cloning with a modified request.
-    // Hono doesn't let us mutate headers, so proxy via a reconstructed Request.
     const headers = new Headers(c.req.raw.headers);
     headers.set('x-api-key', bearer);
-    const req = new Request(c.req.raw, { headers });
-    c.req.raw = req;
+    c.req.raw = new Request(c.req.raw, { headers });
   }
-  return requireApiKey()(c, next);
+  try {
+    return await requireApiKey()(c, next);
+  } catch (err: unknown) {
+    const { HTTPException } = await import('hono/http-exception');
+    if (err instanceof HTTPException && err.status === 401) {
+      return new Response(err.message, {
+        status: 401,
+        headers: {
+          'WWW-Authenticate': wwwAuthenticate(origin),
+          'Content-Type': 'text/plain',
+        },
+      });
+    }
+    throw err;
+  }
 });
 
 mcpRoutes.post('/', async (c) => {
