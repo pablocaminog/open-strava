@@ -63,7 +63,10 @@ mcpRoutes.get('/.well-known/oauth-authorization-server', (c) => {
 mcpRoutes.get('/authorize', (c) => {
   const q = c.req.query();
   const { redirect_uri = '', state = '', code_challenge = '', code_challenge_method = 'S256' } = q;
-  if (!redirect_uri || !code_challenge) return c.text('Missing redirect_uri or code_challenge', 400);
+  // Bare GET with no params = health probe. Return 200 so Claude doesn't fail at start_error.
+  if (!redirect_uri || !code_challenge) {
+    return c.html('<html><body><h2>pacelore MCP authorization</h2><p>This endpoint requires an OAuth 2.1 authorization request from a compatible client.</p></body></html>');
+  }
 
   const html = `<!DOCTYPE html>
 <html lang="en">
