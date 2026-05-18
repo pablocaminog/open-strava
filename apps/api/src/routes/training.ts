@@ -223,17 +223,19 @@ trainingRoutes.get('/me/calendar/activities', async (c) => {
     throw new HTTPException(400, { message: 'invalid from/to' });
   }
   const rows = await c.env.DB.prepare(
-    `SELECT id, sport, name, started_at AS startedAt, total_seconds AS totalSeconds,
-            distance_m AS distanceM, ascent_m AS ascentM,
-            hr_avg AS hrAvg, hr_max AS hrMax,
-            power_avg AS powerAvg, power_max AS powerMax,
-            np, intensity_factor AS intensityFactor, tss, kj,
-            speed_avg_ms AS speedAvgMs,
-            source, external_source AS externalSource, external_id AS externalId
-       FROM activities
-      WHERE athlete_id = ?
-        AND started_at BETWEEN ? AND ?
-      ORDER BY started_at ASC`,
+    `SELECT a.id, a.sport, a.name, a.started_at AS startedAt, a.total_seconds AS totalSeconds,
+            a.distance_m AS distanceM, a.ascent_m AS ascentM,
+            a.hr_avg AS hrAvg, a.hr_max AS hrMax,
+            a.power_avg AS powerAvg, a.power_max AS powerMax,
+            a.np, a.intensity_factor AS intensityFactor, a.tss, a.kj,
+            a.speed_avg_ms AS speedAvgMs,
+            a.source, a.external_source AS externalSource, a.external_id AS externalId,
+            pw.compliance_score AS complianceScore
+       FROM activities a
+       LEFT JOIN planned_workouts pw ON pw.completed_activity_id = a.id AND pw.athlete_id = a.athlete_id
+      WHERE a.athlete_id = ?
+        AND a.started_at BETWEEN ? AND ?
+      ORDER BY a.started_at ASC`,
   )
     .bind(session.userId, fromEpoch, toEpoch)
     .all();

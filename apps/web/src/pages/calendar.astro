@@ -147,6 +147,9 @@ import Icon from '../components/Icon.astro';
   .cal-card:hover {
     border-color: var(--border-strong);
   }
+  .cal-card.compliance-green { border-left: 3px solid #22c55e; }
+  .cal-card.compliance-yellow { border-left: 3px solid #eab308; }
+  .cal-card.compliance-red { border-left: 3px solid #ef4444; }
   .cal-card-top {
     background: var(--ink-50);
     padding: 5px 8px;
@@ -319,6 +322,7 @@ import Icon from '../components/Icon.astro';
     source: string;
     externalSource: string | null;
     externalId: string | null;
+    complianceScore?: number | null;
   };
   type PlannedWorkout = {
     id: string;
@@ -656,8 +660,9 @@ import Icon from '../components/Icon.astro';
     const name = a.name ?? sentenceCase(sport);
     const source = sourceLabel(a);
 
+    const compClass = complianceToCssClass(a.complianceScore);
     return `
-      <a class="cal-card ${sportClass}" href="/activity/${escape(a.id)}">
+      <a class="cal-card ${sportClass}${compClass ? ` ${compClass}` : ''}" href="/activity/${escape(a.id)}">
         <div class="cal-card-top">
           <span class="sport">${sportGlyph(sport)}</span>
           <span class="duration">${escape(dur)}</span>
@@ -745,6 +750,13 @@ import Icon from '../components/Icon.astro';
       return '<circle cx="12" cy="12" r="9"/>';
     })();
     return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+  }
+
+  function complianceToCssClass(score: number | null | undefined): string {
+    if (score == null) return '';
+    if (score >= 0.95) return 'compliance-green';
+    if (score >= 0.85) return 'compliance-yellow';
+    return 'compliance-red';
   }
 
   function escape(s: string): string {
