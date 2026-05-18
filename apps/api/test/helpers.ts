@@ -879,6 +879,12 @@ export class FakeD1 implements D1Database {
       this.apiKeys.push({ id, user_id, hashed_key, scopes, name: name ?? null, revoked_at: null });
       return [];
     }
+    if (trimmed.startsWith('UPDATE api_keys SET revoked_at')) {
+      const [id, user_id] = params;
+      const row = this.apiKeys.find((r) => r.id === id && r.user_id === user_id);
+      if (row) row.revoked_at = Math.floor(Date.now() / 1000);
+      return [];
+    }
     if (trimmed.startsWith('UPDATE api_keys')) {
       return [];
     }
