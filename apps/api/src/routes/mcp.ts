@@ -26,10 +26,11 @@
 import { Hono, type Context } from 'hono';
 import type { Env } from '../env.js';
 import { requireApiKey, type ApiKeyVariables } from '../auth/apiKey.js';
+import { uuidv7 } from '../util/uuid.js';
 
 type Ctx = Context<{ Bindings: Env; Variables: ApiKeyVariables }>;
 
-export const mcpRoutes = new Hono<{ Bindings: Env; Variables: ApiKeyVariables }>();
+export const mcpRoutes = new Hono<{ Bindings: Env; Variables: ApiKeyVariables }>({ strict: false });
 
 // ── OAuth helpers ────────────────────────────────────────────────────────────
 
@@ -47,33 +48,36 @@ async function sha256Base64Url(s: string): Promise<string> {
 
 // ── OAuth 2.1 endpoints (no auth required) ───────────────────────────────────
 
-function authServerMeta(base: string) {
+// origin = root domain (e.g. https://api.pacelore.com)
+// Clients strip the /mcp path when doing RFC 8414 issuer lookup, so issuer must be root.
+function authServerMeta(origin: string) {
+  const base = `${origin}/mcp`;
   return {
-    issuer: base,
+    issuer: origin,
     authorization_endpoint: `${base}/authorize`,
     token_endpoint: `${base}/token`,
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code'],
     code_challenge_methods_supported: ['S256'],
     token_endpoint_auth_methods_supported: ['none'],
-    scopes_supported: ['read:activities', 'read:social', 'write:social'],
+    scopes_supported: ['read:activities', 'read:social', 'write:social', 'write:training'],
   };
 }
 
 // RFC 9728 — Claude fetches this first, before oauth-authorization-server.
 mcpRoutes.get('/.well-known/oauth-protected-resource', (c) => {
-  const base = new URL(c.req.url).origin + '/mcp';
+  const { origin } = new URL(c.req.url);
   return c.json({
-    resource: base,
-    authorization_servers: [base],
+    resource: `${origin}/mcp`,
+    authorization_servers: [origin],
     bearer_methods_supported: ['header'],
-    scopes_supported: ['read:activities', 'read:social', 'write:social'],
+    scopes_supported: ['read:activities', 'read:social', 'write:social', 'write:training'],
   });
 });
 
 mcpRoutes.get('/.well-known/oauth-authorization-server', (c) => {
-  const base = new URL(c.req.url).origin + '/mcp';
-  return c.json(authServerMeta(base));
+  const { origin } = new URL(c.req.url);
+  return c.json(authServerMeta(origin));
 });
 
 mcpRoutes.get('/authorize', (c) => {
@@ -282,6 +286,48 @@ const TOOLS = [
       },
     },
     requiredScope: 'read:social',
+  },
+  {
+    name: 'list_planned_workouts',
+    description: 'List planned workouts between two dates (inclusive).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+        to: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+      },
+      required: ['from', 'to'],
+    },
+    requiredScope: 'read:activities',
+  },
+  {
+    name: 'schedule_workout',
+    description: 'Schedule a planned workout on a specific date.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        scheduledDate: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+        sport: { type: 'string', enum: ['cycling', 'running', 'swimming', 'other'] },
+        durationMin: { type: 'integer', minimum: 1 },
+        targetZone: { type: 'string' },
+        description: { type: 'string' },
+        notes: { type: 'string' },
+      },
+      required: ['scheduledDate', 'sport', 'durationMin'],
+    },
+    requiredScope: 'write:training',
+  },
+  {
+    name: 'delete_planned_workout',
+    description: 'Remove a planned workout by id.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string' },
+      },
+      required: ['id'],
+    },
+    requiredScope: 'write:training',
   },
 ] as const;
 
@@ -573,6 +619,77 @@ async function runTool(c: Ctx, id: unknown, name: string, args: Record<string, u
         items: page,
         nextCursor: more ? String(page[page.length - 1]!.startedAt) : null,
       });
+    }
+    case 'list_planned_workouts': {
+      const from = typeof args.from === 'string' ? args.from : '';
+      const to = typeof args.to === 'string' ? args.to : '';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+        return jsonRpcError(c, id, -32602, 'from and to must be YYYY-MM-DD');
+      }
+      const rows = await env.DB.prepare(
+        `SELECT pw.id, pw.scheduled_date AS scheduledDate, pw.notes,
+                pw.workout_id AS workoutId, pw.completed_activity_id AS completedActivityId,
+                pw.compliance_score AS complianceScore, pw.session_json AS sessionJson,
+                w.name AS workoutName, w.sport AS workoutSport,
+                w.estimated_tss AS estimatedTss, w.estimated_duration_sec AS estimatedDurationSec
+           FROM planned_workouts pw
+           LEFT JOIN workouts w ON w.id = pw.workout_id
+          WHERE pw.athlete_id = ?
+            AND pw.scheduled_date BETWEEN ? AND ?
+          ORDER BY pw.scheduled_date ASC`,
+      )
+        .bind(userId, from, to)
+        .all();
+      const items = (rows.results ?? []).map((r: Record<string, unknown>) => {
+        const { sessionJson, ...rest } = r;
+        const parsed = typeof sessionJson === 'string' ? JSON.parse(sessionJson) : {};
+        return { ...parsed, ...rest };
+      });
+      return ok({ items });
+    }
+    case 'schedule_workout': {
+      const scheduledDate = typeof args.scheduledDate === 'string' ? args.scheduledDate : '';
+      const sport = typeof args.sport === 'string' ? args.sport : '';
+      const durationMin = Number(args.durationMin ?? 0);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(scheduledDate)) {
+        return jsonRpcError(c, id, -32602, 'scheduledDate must be YYYY-MM-DD');
+      }
+      if (!['cycling', 'running', 'swimming', 'other'].includes(sport)) {
+        return jsonRpcError(c, id, -32602, 'invalid sport');
+      }
+      if (!Number.isFinite(durationMin) || !Number.isInteger(durationMin) || durationMin < 1) {
+        return jsonRpcError(c, id, -32602, 'durationMin must be a positive integer');
+      }
+      const pwId = uuidv7();
+      const sessionJson = JSON.stringify({
+        sport,
+        durationMin,
+        ...(args.targetZone != null ? { targetZone: String(args.targetZone) } : {}),
+        ...(args.description != null ? { description: String(args.description) } : {}),
+      });
+      await env.DB.prepare(
+        `INSERT INTO planned_workouts (id, athlete_id, scheduled_date, notes, session_json, assigned_by, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, unixepoch())`,
+      )
+        .bind(
+          pwId,
+          userId,
+          scheduledDate,
+          args.notes != null ? String(args.notes) : null,
+          sessionJson,
+          userId,
+        )
+        .run();
+      return ok({ id: pwId });
+    }
+    case 'delete_planned_workout': {
+      const pwId = typeof args.id === 'string' ? args.id : '';
+      await env.DB.prepare(
+        `DELETE FROM planned_workouts WHERE id = ? AND athlete_id = ?`,
+      )
+        .bind(pwId, userId)
+        .run();
+      return ok({ ok: true });
     }
     default:
       return jsonRpcError(c, id, -32601, `unknown tool: ${name}`);
