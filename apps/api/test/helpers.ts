@@ -760,6 +760,88 @@ export class FakeD1 implements D1Database {
         },
       ];
     }
+    if (trimmed.startsWith('INSERT INTO planned_workouts')) {
+      const [id, athlete_id, scheduled_date, notes, session_json, assigned_by] = params;
+      this.plannedWorkouts.push({
+        id,
+        athlete_id,
+        scheduled_date,
+        notes: notes ?? null,
+        session_json: session_json ?? null,
+        workout_id: null,
+        assigned_by: assigned_by ?? null,
+        completed_activity_id: null,
+        compliance_score: null,
+        created_at: Math.floor(Date.now() / 1000),
+      });
+      return [];
+    }
+    if (
+      trimmed.includes('session_json AS sessionJson') &&
+      trimmed.includes('FROM planned_workouts') &&
+      !trimmed.includes('LEFT JOIN')
+    ) {
+      const [athleteId, from, to] = params;
+      return this.plannedWorkouts
+        .filter(
+          (pw) =>
+            pw.athlete_id === athleteId &&
+            String(pw.scheduled_date) >= String(from) &&
+            String(pw.scheduled_date) <= String(to),
+        )
+        .sort((a, b) => String(a.scheduled_date).localeCompare(String(b.scheduled_date)))
+        .map((pw) => ({
+          id: pw.id,
+          scheduledDate: pw.scheduled_date,
+          notes: pw.notes ?? null,
+          workoutId: pw.workout_id ?? null,
+          completedActivityId: pw.completed_activity_id ?? null,
+          complianceScore: pw.compliance_score ?? null,
+          sessionJson: pw.session_json ?? null,
+          createdAt: pw.created_at,
+        }));
+    }
+    if (trimmed.startsWith('DELETE FROM planned_workouts')) {
+      const [id, userId1, userId2] = params;
+      this.plannedWorkouts = this.plannedWorkouts.filter(
+        (pw) =>
+          !(
+            pw.id === id &&
+            (pw.athlete_id === userId1 || pw.assigned_by === (userId2 ?? userId1))
+          ),
+      );
+      return [];
+    }
+    if (
+      trimmed.includes('FROM planned_workouts pw') &&
+      trimmed.includes('LEFT JOIN workouts w')
+    ) {
+      const [athleteId, from, to] = params;
+      return this.plannedWorkouts
+        .filter(
+          (pw) =>
+            pw.athlete_id === athleteId &&
+            String(pw.scheduled_date) >= String(from) &&
+            String(pw.scheduled_date) <= String(to),
+        )
+        .sort((a, b) => String(a.scheduled_date).localeCompare(String(b.scheduled_date)))
+        .map((pw) => {
+          const w = this.workouts.find((x) => x.id === pw.workout_id);
+          return {
+            id: pw.id,
+            scheduledDate: pw.scheduled_date,
+            notes: pw.notes ?? null,
+            workoutId: pw.workout_id ?? null,
+            completedActivityId: pw.completed_activity_id ?? null,
+            complianceScore: pw.compliance_score ?? null,
+            sessionJson: pw.session_json ?? null,
+            workoutName: w?.name ?? null,
+            workoutSport: w?.sport ?? null,
+            estimatedTss: w?.estimated_tss ?? null,
+            estimatedDurationSec: w?.estimated_duration_sec ?? null,
+          };
+        });
+    }
     if (trimmed.startsWith('UPDATE planned_workouts SET completed_activity_id')) {
       const [activityId, score, id] = params;
       const pw = this.plannedWorkouts.find((r) => r.id === id);
@@ -775,6 +857,29 @@ export class FakeD1 implements D1Database {
       const cur = this.pmcDaily.get(key);
       if (cur) cur.tss = ((cur.tss as number) ?? 0) + tss;
       else this.pmcDaily.set(key, { athlete_id, date, tss });
+      return [];
+    }
+    if (trimmed.startsWith('SELECT id, user_id AS userId, hashed_key')) {
+      const id = params[0];
+      const row = this.apiKeys.find((r) => r.id === id);
+      return row
+        ? [
+            {
+              id: row.id,
+              userId: row.user_id,
+              hashedKey: row.hashed_key,
+              scopes: row.scopes,
+              revokedAt: row.revoked_at ?? null,
+            },
+          ]
+        : [];
+    }
+    if (trimmed.startsWith('INSERT INTO api_keys')) {
+      const [id, user_id, hashed_key, scopes, name] = params;
+      this.apiKeys.push({ id, user_id, hashed_key, scopes, name: name ?? null, revoked_at: null });
+      return [];
+    }
+    if (trimmed.startsWith('UPDATE api_keys')) {
       return [];
     }
     return [];
