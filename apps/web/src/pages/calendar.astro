@@ -267,6 +267,15 @@ import Icon from '../components/Icon.astro';
     padding: 32px;
     text-align: center;
   }
+  /* Planned workout cards — outlined, dashed, lighter */
+  .cal-card.cal-card-planned {
+    border-style: dashed;
+    opacity: 0.75;
+    cursor: default;
+  }
+  .cal-card.cal-card-planned .cal-card-top {
+    opacity: 0.85;
+  }
 </style>
 
 <script>
@@ -289,6 +298,15 @@ import Icon from '../components/Icon.astro';
     source: string;
     externalSource: string | null;
     externalId: string | null;
+  };
+  type PlannedWorkout = {
+    id: string;
+    scheduledDate: string;
+    sport: string;
+    durationMin: number;
+    targetZone: string | null;
+    description: string | null;
+    notes: string | null;
   };
   type PmcDay = { date: string; ctl: number; atl: number; tsb: number; tss: number };
   type WellnessDay = {
@@ -340,7 +358,7 @@ import Icon from '../components/Icon.astro';
     const toIso = isoDate(sunday);
     wrap.innerHTML = '<div class="cal-loading caption">Loading…</div>';
 
-    const [actsRes, pmcRes, wellRes] = await Promise.all([
+    const [actsRes, pmcRes, wellRes, plannedRes] = await Promise.all([
       fetch(`/api/v1/me/calendar/activities?from=${fromIso}&to=${toIso}`, {
         credentials: 'include',
       }),
@@ -348,6 +366,9 @@ import Icon from '../components/Icon.astro';
         credentials: 'include',
       }),
       fetch(`/api/v1/me/wellness?from=${fromIso}&to=${toIso}`, {
+        credentials: 'include',
+      }),
+      fetch(`/api/v1/planned-workouts?from=${fromIso}&to=${toIso}`, {
         credentials: 'include',
       }),
     ]);
@@ -362,6 +383,9 @@ import Icon from '../components/Icon.astro';
       ? ((await wellRes.json()) as { items: WellnessDay[] }).items
       : [];
     const wellByDate = new Map(wellness.map((w) => [w.date, w]));
+    const planned = plannedRes.ok
+      ? ((await plannedRes.json()) as { items: PlannedWorkout[] }).items
+      : [];
 
     // Bucket activities by ISO date string (athlete-local — UTC for now).
     const byDay = new Map<string, Activity[]>();
@@ -372,16 +396,25 @@ import Icon from '../components/Icon.astro';
       byDay.set(key, list);
     }
 
+    // Bucket planned workouts by scheduledDate.
+    const plannedByDay = new Map<string, PlannedWorkout[]>();
+    for (const p of planned) {
+      const list = plannedByDay.get(p.scheduledDate) ?? [];
+      list.push(p);
+      plannedByDay.set(p.scheduledDate, list);
+    }
+
     const today = isoDate(new Date());
     const grid: string[] = [];
     grid.push(buildHeader());
 
-    for (let i = 0; i < weeksBack; i++) {
+    // Newest week first (today at top).
+    for (let i = weeksBack - 1; i >= 0; i--) {
       const weekMonday = new Date(monday);
       weekMonday.setUTCDate(monday.getUTCDate() + i * 7);
       const weekSunday = new Date(weekMonday);
       weekSunday.setUTCDate(weekMonday.getUTCDate() + 6);
-      grid.push(buildWeek(weekMonday, weekSunday, byDay, pmcByDate, wellByDate, today));
+      grid.push(buildWeek(weekMonday, weekSunday, byDay, plannedByDay, pmcByDate, wellByDate, today));
     }
 
     wrap.innerHTML = `<div class="cal-grid">${grid.join('')}</div>`;
@@ -400,6 +433,7 @@ import Icon from '../components/Icon.astro';
     monday: Date,
     sunday: Date,
     byDay: Map<string, Activity[]>,
+    plannedByDay: Map<string, PlannedWorkout[]>,
     pmcByDate: Map<string, PmcDay>,
     wellByDate: Map<string, WellnessDay>,
     today: string,
@@ -426,7 +460,7 @@ import Icon from '../components/Icon.astro';
         if (a.distanceM)
           sportDists.set(a.sport, (sportDists.get(a.sport) ?? 0) + a.distanceM);
       }
-      dayCells.push(buildDay(day, key, acts, wellByDate.get(key) ?? null, today));
+      dayCells.push(buildDay(day, key, acts, plannedByDay.get(key) ?? [], wellByDate.get(key) ?? null, today));
     }
 
     const sundayKey = isoDate(sunday);
@@ -471,9 +505,9 @@ import Icon from '../components/Icon.astro';
         ${
           pmc
             ? `<div class="cal-week-pmc">
-              <div><span class="k metric-label" style="color: var(--fg-muted);" data-metric="ctl" tabindex="0">CTL</span><div class="v">${pmc.ctl.toFixed(0)}</div></div>
-              <div><span class="k metric-label" style="color: var(--fg-muted);" data-metric="atl" tabindex="0">ATL</span><div class="v">${pmc.atl.toFixed(0)}</div></div>
-              <div><span class="k metric-label" style="color: var(--fg-muted);" data-metric="tsb" tabindex="0">TSB</span><div class="v">${pmc.tsb.toFixed(0)}</div></div>
+              <div><span class="k metric-label" style="color: var(--fg-muted);" data-metric="ctl" tabindex="0">Fitness</span><div class="v">${pmc.ctl.toFixed(0)}</div></div>
+              <div><span class="k metric-label" style="color: var(--fg-muted);" data-metric="atl" tabindex="0">Fatigue</span><div class="v">${pmc.atl.toFixed(0)}</div></div>
+              <div><span class="k metric-label" style="color: var(--fg-muted);" data-metric="tsb" tabindex="0">Form</span><div class="v">${pmc.tsb.toFixed(0)}</div></div>
             </div>`
             : ''
         }
@@ -486,12 +520,14 @@ import Icon from '../components/Icon.astro';
     date: Date,
     key: string,
     acts: Activity[],
+    planned: PlannedWorkout[],
     well: WellnessDay | null,
     today: string,
   ): string {
     const isToday = key === today;
     const isFuture = key > today;
     const cards = acts.map(buildCard).join('');
+    const plannedCards = planned.map(buildPlannedCard).join('');
     const monthShort = date.toLocaleDateString(undefined, {
       month: 'short',
       timeZone: 'UTC',
@@ -503,6 +539,7 @@ import Icon from '../components/Icon.astro';
           <span>${monthShort} ${date.getUTCDate()}</span>
           ${wellRow}
         </div>
+        ${plannedCards}
         ${cards}
       </div>
     `;
@@ -526,6 +563,28 @@ import Icon from '../components/Icon.astro';
     if (w.weightKg != null) parts.push(`<span title="Weight">${w.weightKg.toFixed(1)}kg</span>`);
     if (parts.length === 0) return '';
     return `<span class="cal-wellness" style="margin-left: auto; display: flex; gap: 6px; font-size: 10px; color: var(--fg-subtle);">${parts.join(' ')}</span>`;
+  }
+
+  function buildPlannedCard(p: PlannedWorkout): string {
+    const sport = (p.sport ?? 'other').toLowerCase();
+    const sportClass = ['cycling', 'running', 'swimming'].includes(sport)
+      ? `sport-${sport}`
+      : 'sport-other';
+    const dur = p.durationMin ? `${p.durationMin}m` : '';
+    const zone = p.targetZone ? escape(p.targetZone.toUpperCase()) : '';
+    const label = p.description ? escape(p.description) : escape(sentenceCase(sport));
+    return `
+      <div class="cal-card cal-card-planned ${sportClass}">
+        <div class="cal-card-top">
+          <span class="sport">${sportGlyph(sport)}</span>
+          ${dur ? `<span class="duration">${escape(dur)}</span>` : ''}
+          ${zone ? `<span class="distance">${zone}</span>` : ''}
+        </div>
+        <div class="cal-card-body">
+          <div class="cal-card-name" style="font-weight: 500; opacity: 0.8;">${label}</div>
+        </div>
+      </div>
+    `;
   }
 
   function buildCard(a: Activity): string {
