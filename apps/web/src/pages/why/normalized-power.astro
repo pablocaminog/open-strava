@@ -1,0 +1,130 @@
+---
+import Article from '../../layouts/Article.astro';
+---
+
+<Article
+  title="Why average power lies, and what Normalized Power fixes"
+  description="NP is the most-cited and least-understood number in cycling analytics. Why average power is misleading on variable rides, and how the 4th-power weighting fixes it."
+  publishedAt="2026-05-08"
+  readingMinutes={7}
+  slug="normalized-power"
+  keywords={["normalized power", "np cycling", "average power", "variability index", "coggan", "calculate normalized power"]}
+>
+  <p>Take two rides:</p>
+
+  <table>
+    <thead>
+      <tr><th>Ride</th><th>Profile</th><th>Avg power</th><th>Felt like</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>A</td><td>Steady 220W for 60 min</td><td>220W</td><td>Comfortable</td></tr>
+      <tr><td>B</td><td>60 × 1 min at 400W with 1 min recovery at 40W</td><td>220W</td><td>Brutal</td></tr>
+    </tbody>
+  </table>
+
+  <p>Same average. Wildly different recovery cost. Average power, as a single-number summary, is broken.</p>
+
+  <p>Normalized Power is the standard fix. Here's why it works, and how to compute it from a power stream.</p>
+
+  <h2>The intuition</h2>
+
+  <p>Riding hard for a minute and then easy for a minute does <em>not</em> feel like riding moderately for two minutes. The body responds non-linearly to intensity:</p>
+
+  <ul>
+    <li>Lactate clearance lags effort.</li>
+    <li>Cardiovascular drift compounds with surges.</li>
+    <li>Glycogen burn rate scales steeper than linearly with intensity.</li>
+  </ul>
+
+  <p>So a useful "average" should weight high-intensity samples <em>more than proportionally</em> to their wattage. NP does this by raising every sample (after smoothing) to the 4th power, averaging, then taking the 4th root.</p>
+
+  <h2>The algorithm</h2>
+
+  <ol>
+    <li>Take the 30-second rolling mean of the power stream.</li>
+    <li>Raise every smoothed sample to the 4th power.</li>
+    <li>Take the arithmetic mean.</li>
+    <li>Take the 4th root.</li>
+  </ol>
+
+  <p>The 30-second smoothing reflects the body's response time — sub-30s spikes don't fatigue you the way sustained 30s+ efforts do. The 4th-power weighting was reverse-engineered from physiological data: it's the exponent that best correlates with blood lactate response across the range of cycling intensities.</p>
+
+  <p>In code:</p>
+
+<pre><code>export function normalizedPower(watts: (number | null)[]): number &#123;
+  const valid = watts.map(w =&gt; w ?? 0);
+  const window = 30;
+  const smoothed: number[] = [];
+
+  let sum = 0;
+  for (let i = 0; i &lt; valid.length; i++) &#123;
+    sum += valid[i];
+    if (i &gt;= window) sum -= valid[i - window];
+    if (i &gt;= window - 1) smoothed.push(sum / window);
+  &#125;
+
+  if (smoothed.length === 0) return 0;
+
+  const fourthMean =
+    smoothed.reduce((acc, w) =&gt; acc + w ** 4, 0) / smoothed.length;
+
+  return fourthMean ** 0.25;
+&#125;</code></pre>
+
+  <p>~12 lines. <a href="https://github.com/pablocaminog/pacelore/tree/main/packages/metrics">Source.</a></p>
+
+  <h2>What it actually does to the two rides above</h2>
+
+  <p>For ride A (steady 220W, 60 min): NP ≈ 220W. By construction — a constant stream, smoothed and weighted, returns the same number.</p>
+
+  <p>For ride B (1-on/1-off, 400/40, 60 min): NP ≈ 290W.</p>
+
+  <p>The 70-watt gap is the punishment for variability. Two rides with identical average power, two very different NPs, two very different TSS scores, two very different recovery requirements.</p>
+
+  <h2>Variability Index</h2>
+
+  <p><code>VI = NP / Avg</code>. A useful diagnostic on its own:</p>
+
+  <ul>
+    <li><strong>VI 1.00–1.05</strong> — steady-state ride (TT, smooth tempo).</li>
+    <li><strong>VI 1.05–1.15</strong> — typical road ride with traffic + climbs.</li>
+    <li><strong>VI 1.15–1.30</strong> — group ride with surges, crit, mountain bike.</li>
+    <li><strong>VI &gt; 1.30</strong> — interval workout or race with attacks.</li>
+  </ul>
+
+  <p>If your VI on a "tempo" ride is 1.20, you weren't riding tempo — you were doing intervals. The number doesn't lie.</p>
+
+  <h2>When NP breaks down</h2>
+
+  <p>NP isn't perfect. Known failure modes:</p>
+
+  <ul>
+    <li><strong>Very short rides (&lt; 20 min)</strong> — the 30s smoothing eats too large a fraction of the data; results get noisy.</li>
+    <li><strong>Coasting-heavy rides</strong> — long stretches of zero watts (descents) drag the mean down. xPower (Skiba's variant) handles this slightly better by ignoring zeros.</li>
+    <li><strong>Sprint efforts</strong> — 5–15s neuromuscular efforts get smoothed into oblivion. NP underweights them.</li>
+    <li><strong>Steady efforts above threshold</strong> — the formula was tuned around sub-threshold variability.</li>
+  </ul>
+
+  <p>For 95% of rides, NP is the right number. For the other 5%, look at peak power curve and time-in-zone separately.</p>
+
+  <h2>Why this isn't on Strava</h2>
+
+  <p>It is — for paying users. The function is 12 lines. The data is yours (in your FIT file, on your computer). Strava charges for the rendering, the rolling history, the comparison to your peers. The math has been public domain since 2003.</p>
+
+  <p>pacelore computes NP on every ride, shows the VI, and lets you compare against your own history. Source is in <code>packages/metrics</code>, computed in &lt;50ms per ride.</p>
+
+  <h2>Try it</h2>
+
+  <p><a href="/demo">Live demo</a> — see NP, VI, IF, TSS on a real ride.</p>
+
+  <p><a href="https://github.com/pablocaminog/pacelore">GitHub</a> — fork it, deploy it, audit the math.</p>
+
+  <h2>Further reading</h2>
+
+  <ul>
+    <li>Coggan, A. <em>Training and Racing with a Power Meter</em>, Ch. 7.</li>
+    <li>Skiba, P. "Calculation of xPower." — the ignore-zeros variant.</li>
+    <li><a href="/why/tss">What is TSS, really?</a> — the next number up.</li>
+    <li><a href="/why/pmc">The Performance Manager Chart, explained.</a></li>
+  </ul>
+</Article>

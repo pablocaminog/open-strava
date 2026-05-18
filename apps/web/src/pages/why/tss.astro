@@ -1,0 +1,148 @@
+---
+import Article from '../../layouts/Article.astro';
+---
+
+<Article
+  title="What is TSS, really?"
+  description="A first-principles walk through Training Stress Score — where the formula comes from, how to compute it from a FIT file, and why Strava paywalls it."
+  publishedAt="2026-05-08"
+  readingMinutes={8}
+  slug="tss"
+  keywords={["TSS", "training stress score", "normalized power", "intensity factor", "FIT file", "free trainingpeaks alternative"]}
+>
+  <p>Training Stress Score is the most useful number a cyclist or runner has, and the most misunderstood. It's a single integer that says how hard a workout was, in a way that's comparable across days, sports, and athletes.</p>
+
+  <p>It's also, at the time of writing, behind a paywall on Strava and a $240/yr subscription on TrainingPeaks.</p>
+
+  <p>It shouldn't be. The formula is one line. This post walks through it from first principles, computes it on a real FIT file, and shows you how to read it.</p>
+
+  <h2>The problem TSS solves</h2>
+
+  <p>Two workouts:</p>
+  <ul>
+    <li><strong>A</strong>: 60 minutes at threshold.</li>
+    <li><strong>B</strong>: 90 minutes at endurance.</li>
+  </ul>
+
+  <p>Which was harder? "Harder" how — perceived effort? Calorie burn? Recovery cost?</p>
+
+  <p>The honest answer is <em>recovery cost</em>. You can do workout B almost every day. You can't do workout A two days in a row without paying for it. We need a number that reflects that asymmetry.</p>
+
+  <p>The trick is that recovery cost doesn't scale linearly with intensity. Doubling power doesn't double soreness — it more than doubles it. So a useful score has to weight intensity <em>non-linearly</em>.</p>
+
+  <p>That's exactly what TSS does.</p>
+
+  <h2>The formula</h2>
+
+  <pre><code>TSS = (seconds × NP × IF) / (FTP × 3600) × 100</code></pre>
+
+  <p>Where:</p>
+  <ul>
+    <li><code>seconds</code> — duration of the workout in seconds.</li>
+    <li><code>NP</code> — <em>normalized power</em>, a "perceived" average that punishes variability.</li>
+    <li><code>IF</code> — <em>intensity factor</em>, equal to <code>NP / FTP</code>.</li>
+    <li><code>FTP</code> — your <em>functional threshold power</em>, the wattage you can hold for ~1 hour.</li>
+  </ul>
+
+  <p>A 1-hour ride at exactly your FTP scores <strong>TSS = 100</strong> by definition. That's the anchor.</p>
+
+  <p>Examples:</p>
+  <ul>
+    <li>60 min at 0.85 IF (sweet spot) → TSS ≈ 72</li>
+    <li>90 min at 0.70 IF (endurance) → TSS ≈ 73 (yes, almost identical)</li>
+    <li>30 min at 1.10 IF (threshold over-unders) → TSS ≈ 60</li>
+    <li>5 hour at 0.65 IF (long endurance) → TSS ≈ 211</li>
+  </ul>
+
+  <p>That last one is why long rides crush you for two days, and the threshold over-unders only knock you out for one.</p>
+
+  <h2>Where Normalized Power comes from</h2>
+
+  <p>The naïve thing is to take the average wattage. That fails:</p>
+  <ul>
+    <li>A steady 200W ride and a 0/400/0/400 sawtooth ride have the same average. The sawtooth is much harder.</li>
+    <li>Average power throws away the part that matters — the bursts.</li>
+  </ul>
+
+  <p>Andrew Coggan's fix is to <em>weight the intensity by itself</em>, then take the mean. The standard implementation:</p>
+
+  <ol>
+    <li>Smooth the power stream with a 30-second rolling average.</li>
+    <li>Raise each smoothed sample to the <strong>4th power</strong>.</li>
+    <li>Take the mean of those.</li>
+    <li>Take the <strong>4th root</strong> of the mean.</li>
+  </ol>
+
+  <p>That's NP. The 4th-power weight makes high samples count disproportionately, which matches how the body experiences variable efforts.</p>
+
+  <p>In TypeScript:</p>
+
+<pre><code>function normalizedPower(watts: number[]): number &#123;
+  const window = 30;
+  const smoothed: number[] = [];
+  let sum = 0;
+  for (let i = 0; i &lt; watts.length; i++) &#123;
+    sum += watts[i];
+    if (i &gt;= window) sum -= watts[i - window];
+    if (i &gt;= window - 1) smoothed.push(sum / window);
+  &#125;
+  const fourthPowerMean =
+    smoothed.reduce((acc, w) =&gt; acc + w ** 4, 0) / smoothed.length;
+  return fourthPowerMean ** 0.25;
+&#125;</code></pre>
+
+  <p>That's the whole NP function. <a href="https://github.com/pablocaminog/pacelore/tree/main/packages/metrics">Source in pacelore.</a></p>
+
+  <h2>Where Intensity Factor comes from</h2>
+
+  <p><code>IF = NP / FTP</code>. It's the share of your maximum sustainable effort the workout represented.</p>
+
+  <ul>
+    <li>IF &lt; 0.65 — recovery / Z2 endurance</li>
+    <li>IF 0.75–0.85 — tempo / sweet spot</li>
+    <li>IF 0.85–0.95 — threshold</li>
+    <li>IF 0.95–1.05 — VO2-max intervals</li>
+    <li>IF &gt; 1.05 — race or all-out efforts</li>
+  </ul>
+
+  <p>If you find yourself averaging IF &gt; 0.85 over a four-hour ride, your FTP is probably set too low.</p>
+
+  <h2>Why does Strava paywall this?</h2>
+
+  <p>Two reasons, both economic:</p>
+  <ol>
+    <li><strong>Power-data users skew toward serious cyclists</strong>, who are more willing to pay for tools. So putting analytics behind a paywall converts well.</li>
+    <li><strong>TrainingPeaks built its business on it.</strong> TSS, NP, IF, and the PMC chart are TrainingPeaks innovations (popularized by Andrew Coggan and Hunter Allen). Strava buying their way into that market — instead of building free competing implementations — is a strategic choice, not a technical one.</li>
+  </ol>
+
+  <p>The cost to compute TSS is fractions of a millisecond per ride. The cost to <em>show it to you</em> is, generously, a tenth of a cent. There's no infrastructure reason it costs $240/yr. It costs $240/yr because the people who want it will pay it.</p>
+
+  <p>pacelore exists, in part, because that pricing isn't a law of nature.</p>
+
+  <h2>How to read your TSS</h2>
+
+  <p>Once you have it, the obvious next questions:</p>
+  <ul>
+    <li><strong>Daily TSS</strong> — how hard was today.</li>
+    <li><strong>Weekly TSS</strong> — your training volume in load terms.</li>
+    <li><strong>Chronic Training Load (CTL)</strong> — 42-day exponentially weighted average. Your fitness.</li>
+    <li><strong>Acute Training Load (ATL)</strong> — 7-day EWMA. Your recent fatigue.</li>
+    <li><strong>Training Stress Balance (TSB)</strong> — <code>CTL − ATL</code>. Negative means you're tired. Positive means you're rested (or detraining).</li>
+  </ul>
+
+  <p>Together they form the <strong>Performance Manager Chart</strong>, which we cover in <a href="/why/pmc">the next post</a>.</p>
+
+  <h2>Try it</h2>
+
+  <p>pacelore computes TSS on every ingested ride and shows the breakdown — NP, IF, kJ, peak curves — without paywalls.</p>
+
+  <p><a href="/demo">Live demo</a> shows a real activity. <a href="https://github.com/pablocaminog/pacelore/tree/main/packages/metrics">Source</a> is on GitHub.</p>
+
+  <h2>Further reading</h2>
+
+  <ul>
+    <li>Andrew Coggan, <em>Training and Racing with a Power Meter</em>.</li>
+    <li>Hunter Allen and Stephen McGregor, <em>Cutting-Edge Cycling</em>.</li>
+    <li>The TrainingPeaks blog post that introduced the PMC: <a href="https://www.trainingpeaks.com/blog/the-science-of-the-performance-manager/">"The Science of the Performance Manager"</a> by Tim Banister.</li>
+  </ul>
+</Article>

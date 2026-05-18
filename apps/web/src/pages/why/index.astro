@@ -1,0 +1,114 @@
+---
+import Marketing from '../../layouts/Marketing.astro';
+
+const posts = [
+  {
+    slug: 'tss',
+    title: 'What is TSS, really?',
+    description: 'Training Stress Score in 30 lines of TypeScript. Where the formula comes from, what it costs to compute, and why incumbents charge for it.',
+    keyword: 'TSS',
+    readingMinutes: 8,
+  },
+  {
+    slug: 'normalized-power',
+    title: 'Why average power lies, and what NP fixes',
+    description: 'Two rides with the same average can have wildly different recovery costs. Normalized Power is the standard fix — and a 12-line function.',
+    keyword: 'NP · IF · VI',
+    readingMinutes: 7,
+  },
+  {
+    slug: 'pmc',
+    title: 'The Performance Manager Chart, explained',
+    description: 'CTL, ATL, TSB. Three numbers that summarize months of training. The math is two EWMAs and one subtraction.',
+    keyword: 'CTL · ATL · TSB',
+    readingMinutes: 9,
+  },
+  {
+    slug: 'gap',
+    title: 'Grade-Adjusted Pace, explained',
+    description: 'Minetti\'s 5th-degree polynomial turns a hilly run into the equivalent flat-ground pace. Why your watch might disagree.',
+    keyword: 'GAP · rTSS',
+    readingMinutes: 8,
+  },
+];
+---
+
+<Marketing
+  title="why"
+  description="Plain-English explainers for the metrics Strava and TrainingPeaks paywall — TSS, NP, IF, the PMC chart, and GAP."
+>
+  <div class="marketing-content">
+    <section class="marketing-hero" style="text-align: left; padding-bottom: 24px;">
+      <span class="metric-label">explainers · why these numbers matter</span>
+      <h1>The metrics, demystified.</h1>
+      <p style="max-width: 64ch;">
+        Plain-English derivations of the analytics Strava and TrainingPeaks charge for —
+        TSS, Normalized Power, the Performance Manager Chart, and Grade-Adjusted Pace.
+        Every formula in 30 lines or fewer. Every implementation linked to its source on GitHub.
+      </p>
+    </section>
+
+    <section class="stack" style="gap: 16px;">
+      <div class="why-list">
+        {
+          posts.map((post) => (
+            <a class="why-card" href={`/why/${post.slug}`}>
+              <span class="metric-label">{post.keyword}</span>
+              <h2 class="why-title">{post.title}</h2>
+              <p class="why-desc">{post.description}</p>
+              <span class="why-meta">{post.readingMinutes} min read →</span>
+            </a>
+          ))
+        }
+      </div>
+    </section>
+  </div>
+</Marketing>
+
+<style>
+  .why-list {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  @media (min-width: 640px) {
+    .why-list { grid-template-columns: 1fr 1fr; }
+  }
+  .why-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 24px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--fg);
+    text-decoration: none;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+  }
+  .why-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-1px);
+  }
+  .why-title {
+    font-family: var(--font-serif);
+    font-weight: 500;
+    font-size: 24px;
+    margin: 0;
+    line-height: 1.2;
+  }
+  .why-desc {
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--fg-muted);
+    margin: 0;
+  }
+  .why-meta {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-top: 4px;
+  }
+</style>

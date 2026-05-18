@@ -1,0 +1,197 @@
+---
+import Marketing from './Marketing.astro';
+
+interface Props {
+  title: string;
+  description: string;
+  publishedAt: string;
+  updatedAt?: string;
+  readingMinutes: number;
+  slug: string;
+  keywords?: string[];
+}
+
+const { title, description, publishedAt, updatedAt, readingMinutes, slug, keywords } = Astro.props;
+
+const canonical = `https://pacelore.com/why/${slug}`;
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'TechArticle',
+  headline: title,
+  description,
+  datePublished: publishedAt,
+  dateModified: updatedAt ?? publishedAt,
+  author: {
+    '@type': 'Organization',
+    name: 'pacelore',
+    url: 'https://pacelore.com',
+  },
+  publisher: {
+    '@type': 'Organization',
+    name: 'pacelore',
+    url: 'https://pacelore.com',
+    logo: {
+      '@type': 'ImageObject',
+      url: 'https://pacelore.com/logo-mark.svg',
+    },
+  },
+  mainEntityOfPage: { '@type': 'WebPage', '@id': canonical },
+  ...(keywords?.length ? { keywords: keywords.join(', ') } : {}),
+};
+---
+
+<Marketing title={title} description={description} jsonLd={jsonLd}>
+  <article class="article">
+    <header class="article-header">
+      <a href="/why" class="muted body-sm article-back">← all explainers</a>
+      <h1 class="article-title">{title}</h1>
+      <p class="article-lede">{description}</p>
+      <div class="article-meta">
+        <time datetime={publishedAt}>{new Date(publishedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</time>
+        <span>·</span>
+        <span>{readingMinutes} min read</span>
+      </div>
+    </header>
+
+    <div class="article-body">
+      <slot />
+    </div>
+
+    <footer class="article-footer panel">
+      <div class="panel-body stack" style="gap: 12px; text-align: center; padding: 32px 24px;">
+        <h2 class="h2" style="margin: 0;">Stop paying for arithmetic.</h2>
+        <p class="body" style="margin: 0; max-width: 56ch; margin-inline: auto;">
+          pacelore computes every metric on this page — for free, on infrastructure that costs ~$0.012 per athlete per month.
+        </p>
+        <div class="row" style="gap: 12px; justify-content: center; flex-wrap: wrap;">
+          <a class="btn btn-primary btn-lg" href="/register">Create account — free, forever</a>
+          <a class="btn btn-ghost btn-lg" href="https://github.com/pablocaminog/pacelore">Source on GitHub →</a>
+        </div>
+      </div>
+    </footer>
+  </article>
+</Marketing>
+
+<style>
+  .article {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 32px 24px 64px;
+  }
+  .article-header {
+    margin-bottom: 32px;
+  }
+  .article-back {
+    display: inline-block;
+    margin-bottom: 16px;
+    text-decoration: none;
+  }
+  .article-back:hover { text-decoration: underline; }
+  .article-title {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    letter-spacing: var(--tk-display);
+    font-size: clamp(32px, 5vw, 48px);
+    margin: 0 0 16px;
+    line-height: 1.15;
+  }
+  .article-lede {
+    font-size: 18px;
+    line-height: 1.55;
+    color: var(--fg-muted);
+    margin: 0 0 16px;
+  }
+  .article-meta {
+    display: flex;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--fg-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .article-body :global(h2) {
+    font-family: var(--font-serif);
+    font-weight: 500;
+    font-size: 28px;
+    margin: 48px 0 16px;
+    line-height: 1.25;
+  }
+  .article-body :global(h3) {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 18px;
+    margin: 32px 0 8px;
+  }
+  .article-body :global(p) {
+    font-size: 17px;
+    line-height: 1.7;
+    margin: 0 0 16px;
+  }
+  .article-body :global(ul),
+  .article-body :global(ol) {
+    font-size: 17px;
+    line-height: 1.7;
+    padding-left: 24px;
+    margin: 0 0 16px;
+  }
+  .article-body :global(li) { margin-bottom: 6px; }
+  .article-body :global(code) {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    background: var(--surface-2);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  .article-body :global(pre) {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    overflow-x: auto;
+    margin: 16px 0;
+    font-size: 13.5px;
+    line-height: 1.55;
+  }
+  .article-body :global(pre code) {
+    background: none;
+    padding: 0;
+    font-size: inherit;
+  }
+  .article-body :global(blockquote) {
+    border-left: 3px solid var(--border);
+    padding: 0 16px;
+    margin: 16px 0;
+    color: var(--fg-muted);
+    font-style: italic;
+  }
+  .article-body :global(a) {
+    color: var(--fg);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .article-body :global(hr) {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 32px 0;
+  }
+  .article-body :global(table) {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  .article-body :global(th),
+  .article-body :global(td) {
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    text-align: left;
+  }
+  .article-body :global(th) {
+    background: var(--surface-2);
+    font-weight: 600;
+  }
+  .article-footer {
+    margin-top: 48px;
+  }
+</style>

@@ -14,9 +14,9 @@ interface Props {
 }
 const {
   title = 'pacelore',
-  description = 'Source-available training platform with TSS, IF, NP, peak power curves, GAP, decoupling, and CTL/ATL/TSB. The Strava + TrainingPeaks alternative that\'s free for athletes, forever.',
+  description = 'Free Strava + TrainingPeaks alternative. TSS, NP, IF, GAP, CTL/ATL/TSB — all free, forever. Source-available, on Cloudflare\'s edge.',
   titleOverride,
-  ogImage = '/og.svg',
+  ogImage = '/og.png',
   canonical,
   jsonLd,
 } = Astro.props;
@@ -24,7 +24,7 @@ const {
 const fullTitle =
   titleOverride ??
   (title === 'pacelore'
-    ? 'pacelore — free Strava + TrainingPeaks alternative · TSS, NP, IF, PMC'
+    ? 'pacelore — free Strava + TrainingPeaks alternative'
     : `${title} · pacelore`);
 
 // Canonical: strip protocol-or-not weirdness so apex/www collapse.
@@ -59,6 +59,8 @@ const canonicalUrl =
 
     <!-- Twitter / X -->
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@pacelore_app" />
+    <meta name="twitter:creator" content="@pacelore_app" />
     <meta name="twitter:title" content={fullTitle} />
     <meta name="twitter:description" content={description} />
     <meta name="twitter:image" content={new URL(ogImage, 'https://pacelore.com').toString()} />

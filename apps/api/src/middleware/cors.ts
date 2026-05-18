@@ -21,7 +21,7 @@ export function corsMiddleware(): MiddlewareHandler<{ Bindings: Env }> {
           },
       credentials: !isMcp,
       allowHeaders: ['Content-Type', 'Authorization', 'X-Api-Key'],
-      exposeHeaders: ['X-Request-Id'],
+      exposeHeaders: isMcp ? ['X-Request-Id', 'WWW-Authenticate'] : ['X-Request-Id'],
       maxAge: 86_400,
     })(c, next);
   };

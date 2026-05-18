@@ -1,0 +1,138 @@
+---
+import Article from '../../layouts/Article.astro';
+---
+
+<Article
+  title="The Performance Manager Chart, explained from scratch"
+  description="CTL, ATL, TSB. Three numbers that summarize fitness, fatigue, and form. The math is two exponentially weighted moving averages and one subtraction."
+  publishedAt="2026-05-08"
+  readingMinutes={9}
+  slug="pmc"
+  keywords={["pmc chart", "ctl atl tsb", "training stress balance", "performance manager", "banister model", "free trainingpeaks alternative"]}
+>
+  <p>Three numbers can summarize months of training:</p>
+
+  <ul>
+    <li><strong>CTL</strong> — Chronic Training Load. Your fitness.</li>
+    <li><strong>ATL</strong> — Acute Training Load. Your recent fatigue.</li>
+    <li><strong>TSB</strong> — Training Stress Balance, <code>CTL − ATL</code>. Your form.</li>
+  </ul>
+
+  <p>Plotted over time, they form the Performance Manager Chart (PMC) — the single most useful long-term view of training a cyclist or runner has. TrainingPeaks paywalls it for $240/yr. Strava paywalls it inside Premium.</p>
+
+  <p>The math is two exponentially weighted moving averages and one subtraction. Here it is.</p>
+
+  <h2>The model</h2>
+
+  <p>Tim Banister's impulse-response model, from the 1970s, says training does two things simultaneously:</p>
+
+  <ul>
+    <li>It builds <strong>fitness</strong>, which decays slowly.</li>
+    <li>It accumulates <strong>fatigue</strong>, which decays quickly.</li>
+  </ul>
+
+  <p>Performance on any given day is fitness minus fatigue. Train too hard, fatigue dominates, performance drops. Rest, fatigue clears faster than fitness, performance rebounds.</p>
+
+  <p>CTL/ATL/TSB are the standard implementation:</p>
+
+  <ul>
+    <li><strong>CTL = exponentially weighted moving average of TSS over 42 days</strong></li>
+    <li><strong>ATL = exponentially weighted moving average of TSS over 7 days</strong></li>
+    <li><strong>TSB = today's CTL − today's ATL</strong></li>
+  </ul>
+
+  <p>The 42- and 7-day windows aren't arbitrary; they're empirically calibrated to the time constants of fitness and fatigue in trained athletes.</p>
+
+  <h2>CTL — fitness</h2>
+
+  <pre><code>CTL_today = CTL_yesterday + (TSS_today - CTL_yesterday) / 42</code></pre>
+
+  <p>Each day's CTL is a small step from yesterday's, weighted by how today's training compared to your trailing baseline. If TSS is higher than CTL, fitness rises. If lower, it falls.</p>
+
+  <p>A rule of thumb: CTL changes by about TSS/42 per day in steady state. Riding 100 TSS/day every day pushes CTL toward 100. Riding 50 TSS/day pushes it toward 50. The ramp is gradual — gaining 10 CTL takes weeks of consistent effort, which is why fitness is hard to build and easy to keep.</p>
+
+  <h2>ATL — fatigue</h2>
+
+  <pre><code>ATL_today = ATL_yesterday + (TSS_today - ATL_yesterday) / 7</code></pre>
+
+  <p>Same shape, faster window. ATL spikes after a hard day and clears within a week of rest. A four-hour endurance ride (TSS ≈ 220) might push ATL up by 25 points in a single day.</p>
+
+  <h2>TSB — form</h2>
+
+  <pre><code>TSB_today = CTL_yesterday - ATL_yesterday</code></pre>
+
+  <p>Note: the standard convention uses <em>yesterday's</em> values to make the chart predictive (today's TSB tells you how today's effort starts, not ends).</p>
+
+  <p>Reading TSB:</p>
+
+  <ul>
+    <li><strong>TSB &gt; +25</strong> — deeply rested or detrained. Race-ready or under-trained, depending on context.</li>
+    <li><strong>TSB +5 to +25</strong> — fresh. Good for a hard test or race.</li>
+    <li><strong>TSB −10 to +5</strong> — neutral. Productive training zone.</li>
+    <li><strong>TSB −30 to −10</strong> — fatigued. Where most of the training stimulus happens.</li>
+    <li><strong>TSB &lt; −30</strong> — severely fatigued. Easy to slip into overtraining here.</li>
+  </ul>
+
+  <p>The peak-and-taper strategy for an "A race" is: ramp CTL for months, hold it through a high-fatigue training block (TSB strongly negative), then taper for 2–3 weeks (TSS down → ATL drops faster than CTL → TSB climbs into positive territory). On race day you've shed fatigue without losing meaningful fitness.</p>
+
+  <h2>The implementation</h2>
+
+<pre><code>type Day = &#123; date: string; tss: number &#125;;
+
+export function computePMC(days: Day[]) &#123;
+  const sorted = [...days].sort((a, b) =&gt; a.date.localeCompare(b.date));
+  let ctl = 0;
+  let atl = 0;
+  return sorted.map(d =&gt; &#123;
+    const yCTL = ctl;
+    const yATL = atl;
+    ctl = yCTL + (d.tss - yCTL) / 42;
+    atl = yATL + (d.tss - yATL) / 7;
+    return &#123;
+      date: d.date,
+      tss: d.tss,
+      ctl,
+      atl,
+      tsb: yCTL - yATL,
+    &#125;;
+  &#125;);
+&#125;</code></pre>
+
+  <p>20 lines. That's the whole thing. <a href="https://github.com/pablocaminog/pacelore/tree/main/packages/metrics">Source.</a></p>
+
+  <p>To compute it correctly you need TSS for <em>every</em> day in the range, including zeros for rest days. Skipping rest days inflates CTL because the EWMA stops decaying.</p>
+
+  <h2>Common misreadings</h2>
+
+  <ul>
+    <li><strong>"My CTL is 90, that means I'm fit."</strong> CTL is unitless. 90 for one athlete is moderate; 90 for another is heroic. It's only useful relative to <em>your</em> history.</li>
+    <li><strong>"TSB &gt; 0, so I'm fresh."</strong> Recovery isn't binary. A TSB of +5 after weeks of negative numbers feels electric. A TSB of +5 in detraining season feels flat. Context matters.</li>
+    <li><strong>"My CTL dropped, I'm losing fitness."</strong> A 5-point drop over 2 weeks of light training is normal and often productive — it's the recovery that consolidates adaptations from the prior block.</li>
+    <li><strong>"I should always train at TSB −10."</strong> No. Long stretches at any one TSB are how plateaus and overuse injuries happen. Cycling between accumulation (TSB negative) and recovery (TSB positive) is the entire game.</li>
+  </ul>
+
+  <h2>What you need to compute it yourself</h2>
+
+  <ul>
+    <li>Daily TSS values for as far back as you care to look.</li>
+    <li>A spreadsheet, a notebook, or 20 lines of code.</li>
+  </ul>
+
+  <p>That's it. There's no proprietary data. There's no special algorithm. There is no infrastructure cost — a year of daily PMC values is 365 floats per athlete. You can store it in 3KB.</p>
+
+  <p>The reason this is paywalled is because the people who want it will pay. pacelore exists, in part, because that's not a good enough reason to lock up math from the 1970s.</p>
+
+  <h2>Try it</h2>
+
+  <p><a href="/demo">Live demo</a> — interactive PMC over a sample athlete's full history.</p>
+
+  <p><a href="https://github.com/pablocaminog/pacelore/tree/main/packages/metrics">Source</a> — fork, audit, run your own.</p>
+
+  <h2>Further reading</h2>
+
+  <ul>
+    <li>Banister, T. <a href="https://www.trainingpeaks.com/blog/the-science-of-the-performance-manager/">"Modeling Elite Athletic Performance."</a></li>
+    <li>Coggan, A. <em>Training and Racing with a Power Meter</em>, Ch. 8.</li>
+    <li><a href="/why/tss">What is TSS, really?</a> — the input to the chart.</li>
+  </ul>
+</Article>

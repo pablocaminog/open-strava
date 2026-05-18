@@ -1,0 +1,143 @@
+---
+import Article from '../../layouts/Article.astro';
+---
+
+<Article
+  title="Grade-Adjusted Pace, explained — and why your watch's number might be wrong"
+  description="GAP turns a hilly run into the equivalent flat-ground pace. The math comes from Alberto Minetti's 2002 paper. The formula, the implementation, and why two apps disagree on the same run."
+  publishedAt="2026-05-08"
+  readingMinutes={8}
+  slug="gap"
+  keywords={["grade adjusted pace", "gap formula", "minetti", "running pace", "calculate gap from gpx"]}
+>
+  <p>You ran 6 miles at 8:30/mi pace. The route had a 400-foot climb. What's that equivalent to on flat ground — 8:00? 8:15? 8:45?</p>
+
+  <p>Grade-Adjusted Pace (GAP) answers that. It converts the actual pace at every grade into the flat-ground pace that would cost the same metabolic energy. Strava paywalls it inside Premium. Garmin Connect doesn't show it at all on most devices. The formula is from a 2002 paper.</p>
+
+  <p>Here's how it works.</p>
+
+  <h2>The physics</h2>
+
+  <p>Running uphill costs more energy per kilometer than running flat. Running downhill costs less — but only up to a point. Steep enough downhills are <em>more</em> costly than flat, because eccentric loading on the quads burns fuel and damages muscle.</p>
+
+  <p>Alberto Minetti measured this directly in 2002 (<a href="https://journals.physiology.org/doi/full/10.1152/japplphysiol.01177.2001">paper</a>) by putting runners on tilting treadmills and measuring oxygen uptake. He fit a 5th-degree polynomial to the resulting energy cost vs. grade curve.</p>
+
+  <p>His formula gives <strong>C(g)</strong>, the energy cost of running per kilogram per meter at grade <em>g</em> (where <em>g</em> is grade as a decimal — 0.05 = 5% uphill):</p>
+
+  <pre><code>C(g) = 155.4·g⁵ − 30.4·g⁴ − 43.3·g³ + 46.3·g² + 19.5·g + 3.6</code></pre>
+
+  <p>At g = 0 (flat), C ≈ 3.6 J/kg/m. That's the baseline.</p>
+
+  <p>At g = 0.10 (10% uphill), C ≈ 7.4 J/kg/m. Running uphill costs roughly twice the energy per meter of horizontal distance.</p>
+
+  <p>At g = −0.10 (10% downhill), C ≈ 2.6 J/kg/m — easier than flat.</p>
+
+  <p>At g = −0.20 (20% downhill), C ≈ 4.0 J/kg/m — <em>harder</em> than flat. The eccentric-loading penalty kicks in.</p>
+
+  <h2>Computing GAP from a stream</h2>
+
+  <p>For each GPS sample (or pair of samples) you have:</p>
+
+  <ol>
+    <li>Distance traveled (meters).</li>
+    <li>Elevation change (meters).</li>
+    <li>Grade <code>g = elevation / distance</code>.</li>
+    <li>Energy cost <code>C(g)</code> from Minetti.</li>
+    <li>Equivalent flat distance: <code>equivalent_m = actual_m × (C(g) / C(0))</code>.</li>
+  </ol>
+
+  <p>Sum the equivalent flat distances over the whole run. Divide by total time. That's GAP.</p>
+
+<pre><code>function minetti(g: number): number &#123;
+  const g2 = g * g;
+  const g3 = g2 * g;
+  const g4 = g3 * g;
+  const g5 = g4 * g;
+  return 155.4 * g5 - 30.4 * g4 - 43.3 * g3 + 46.3 * g2 + 19.5 * g + 3.6;
+&#125;
+
+const C0 = minetti(0); // ≈ 3.6
+
+export function gapFromStream(samples: &#123; distance_m: number; elev_m: number; t_s: number &#125;[]) &#123;
+  let equivalentDistance = 0;
+  let elapsed = 0;
+  for (let i = 1; i &lt; samples.length; i++) &#123;
+    const dx = samples[i].distance_m - samples[i - 1].distance_m;
+    const dh = samples[i].elev_m - samples[i - 1].elev_m;
+    const dt = samples[i].t_s - samples[i - 1].t_s;
+    if (dx &lt;= 0 || dt &lt;= 0) continue;
+    const grade = Math.max(-0.45, Math.min(0.45, dh / dx));
+    equivalentDistance += dx * (minetti(grade) / C0);
+    elapsed += dt;
+  &#125;
+  const equivalentSpeed = equivalentDistance / elapsed; // m/s
+  return secondsPerKm(equivalentSpeed);
+&#125;</code></pre>
+
+  <p>20 lines. <a href="https://github.com/pablocaminog/pacelore/tree/main/packages/metrics">Source.</a></p>
+
+  <h2>Why your watch might disagree</h2>
+
+  <p>GAP implementations vary a lot. Common reasons your numbers don't match across apps:</p>
+
+  <ol>
+    <li><strong>Different curves.</strong> Some apps use Minetti. Strava uses a proprietary tweak. Some watches use a piecewise-linear approximation. The numbers diverge most on steep grades (&gt;8%).</li>
+    <li><strong>Grade smoothing window.</strong> Raw GPS grade is noisy — a 3-meter elevation jitter over a 5-meter horizontal step looks like a 60% grade. Apps smooth grade over windows ranging from 5m to 30s. Wider smoothing → calmer GAP, but loses fine detail.</li>
+    <li><strong>Grade clamping.</strong> Most implementations clamp grade to ±30% or ±45% to prevent GPS noise from blowing up the polynomial. Different clamps → different GAPs.</li>
+    <li><strong>Elevation source.</strong> Barometric altitude (Garmin watches, Apple Watch Ultra) is good. GPS-derived altitude (most phones, older watches) is terrible. SRTM/DEM-corrected (Strava's "elevation correction") is better than GPS but coarse. pacelore uses barometric where available, SRTM otherwise.</li>
+    <li><strong>Distance source.</strong> GPS distance vs. wheel-circumference vs. accelerometer all give slightly different numbers, especially in tunnels, on switchbacks, or under tree cover.</li>
+  </ol>
+
+  <p>A 5–15s/mi disagreement on the same run between two apps is normal. A 30s+ gap means one of them is broken.</p>
+
+  <h2>When GAP is and isn't useful</h2>
+
+  <p><strong>Useful for:</strong></p>
+  <ul>
+    <li>Comparing efforts across hilly and flat routes.</li>
+    <li>Pacing yourself in races with elevation profiles.</li>
+    <li>Evaluating whether a long run was actually "easy" or whether the climbs pushed it into tempo territory.</li>
+  </ul>
+
+  <p><strong>Not useful for:</strong></p>
+  <ul>
+    <li>Trail running with technical terrain. The energy cost of jumping over roots and lateral cuts isn't on Minetti's curve. Trail GAP undersells trail efforts substantially.</li>
+    <li>Treadmill runs. Most watches log 0% grade regardless.</li>
+    <li>Track workouts. The flat-ground assumption already holds; GAP just adds noise.</li>
+    <li>Sub-1-mile efforts. Smoothing eats too much of the data.</li>
+  </ul>
+
+  <h2>What GAP doesn't capture</h2>
+
+  <p>GAP measures <em>metabolic cost</em> of locomotion. It doesn't measure:</p>
+  <ul>
+    <li><strong>Eccentric muscle damage</strong> on long descents (which exceeds metabolic cost on technical or steep downhills).</li>
+    <li><strong>Cardiovascular drift</strong> in heat or at altitude.</li>
+    <li><strong>Heart rate–pace decoupling</strong> (a separate metric we compute alongside).</li>
+    <li><strong>Stride mechanics</strong> — efficiency varies athlete to athlete.</li>
+  </ul>
+
+  <p>A faster GAP doesn't always mean a faster runner. It means a more economical one <em>over the conditions of that run</em>.</p>
+
+  <h2>Why it's behind a paywall</h2>
+
+  <p>GAP was published in a public physiology journal in 2002. The formula is in the paper. The implementation is 20 lines.</p>
+
+  <p>Strava paywalls it because it's the kind of feature serious runners specifically want — the same audience most likely to upgrade. It's not a cost issue. It's a price-discrimination strategy.</p>
+
+  <p>pacelore computes GAP on every run, shows it next to actual pace, and lets you graph it over the course of the run. Source is open. Use it.</p>
+
+  <h2>Try it</h2>
+
+  <p><a href="/demo">Live demo</a> — a hilly run with both pace and GAP graphed.</p>
+
+  <p><a href="https://github.com/pablocaminog/pacelore/tree/main/packages/metrics">Source</a> — fork, audit, run.</p>
+
+  <h2>Further reading</h2>
+
+  <ul>
+    <li>Minetti et al. <a href="https://journals.physiology.org/doi/full/10.1152/japplphysiol.01177.2001">"Energy cost of walking and running at extreme uphill and downhill slopes."</a></li>
+    <li>Vernillo et al. <a href="https://link.springer.com/article/10.1007/s40279-016-0605-y">"Biomechanics and Physiology of Uphill and Downhill Running."</a></li>
+    <li><a href="/why/tss">What is TSS, really?</a> — how GAP feeds into rTSS for runners.</li>
+  </ul>
+</Article>

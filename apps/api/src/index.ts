@@ -33,7 +33,7 @@ import { scheduledHandler } from './scheduled.js';
 import type { Env, IngestJob } from './env.js';
 
 export function buildApp(): Hono<{ Bindings: Env }> {
-  const app = new Hono<{ Bindings: Env }>();
+  const app = new Hono<{ Bindings: Env }>({ strict: false });
   app.use('*', requestIdMiddleware());
   app.use('*', errorMiddleware());
   app.use('*', corsMiddleware());
@@ -74,16 +74,15 @@ export function buildApp(): Hono<{ Bindings: Env }> {
     const base = `${origin}/mcp`;
     return c.json({
       resource: base,
-      authorization_servers: [base],
+      authorization_servers: [origin],
       bearer_methods_supported: ['header'],
       scopes_supported: ['read:activities', 'read:social', 'write:social'],
     });
   });
-  app.get('/.well-known/oauth-authorization-server', (c) => {
-    const origin = new URL(c.req.url).origin;
+  const mcpAuthServerMeta = (origin: string) => {
     const base = `${origin}/mcp`;
-    return c.json({
-      issuer: base,
+    return {
+      issuer: origin,
       authorization_endpoint: `${base}/authorize`,
       token_endpoint: `${base}/token`,
       response_types_supported: ['code'],
@@ -91,8 +90,15 @@ export function buildApp(): Hono<{ Bindings: Env }> {
       code_challenge_methods_supported: ['S256'],
       token_endpoint_auth_methods_supported: ['none'],
       scopes_supported: ['read:activities', 'read:social', 'write:social'],
-    });
-  });
+    };
+  };
+  app.get('/.well-known/oauth-authorization-server', (c) =>
+    c.json(mcpAuthServerMeta(new URL(c.req.url).origin)),
+  );
+  // RFC 8414 §3: when issuer has path /mcp, discovery URL is /.well-known/oauth-authorization-server/mcp
+  app.get('/.well-known/oauth-authorization-server/mcp', (c) =>
+    c.json(mcpAuthServerMeta(new URL(c.req.url).origin)),
+  );
 
   app.notFound((c) => c.json({ error: 'not_found', status: 404 }, 404));
   return app;
