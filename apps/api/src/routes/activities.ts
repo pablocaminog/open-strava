@@ -56,9 +56,28 @@ activityRoutes.get('/activities/:id', async (c) => {
     .bind(id)
     .all<{ key: string; value: number }>();
 
+  const planMatch = await c.env.DB.prepare(
+    `SELECT pw.id AS plannedWorkoutId, pw.compliance_score AS complianceScore,
+            pw.scheduled_date AS scheduledDate, pw.workout_id AS workoutId,
+            w.name AS workoutName
+       FROM planned_workouts pw
+       LEFT JOIN workouts w ON pw.workout_id = w.id
+      WHERE pw.completed_activity_id = ? AND pw.athlete_id = ?
+      LIMIT 1`,
+  )
+    .bind(id, row.athleteId)
+    .first<{
+      plannedWorkoutId: string;
+      complianceScore: number | null;
+      scheduledDate: string;
+      workoutId: string | null;
+      workoutName: string | null;
+    }>();
+
   return c.json({
     activity: row,
     metrics: metricsResult.results ?? [],
+    planMatch: planMatch ?? null,
   });
 });
 

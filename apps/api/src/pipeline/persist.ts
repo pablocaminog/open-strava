@@ -366,6 +366,90 @@ interface PlannedRow {
   estimated_duration_sec: number | null;
 }
 
+export function computeComplianceScore(
+  plannedDurationSec: number,
+  actualDurationSec: number,
+  stepsJson: string | null,
+  actualPowerAvg: number | null,
+  actualTss: number | null,
+): number {
+  const durScore = Math.min(
+    actualDurationSec / plannedDurationSec,
+    plannedDurationSec / actualDurationSec,
+  );
+
+  const targetWatts = extractMainWorkWatts(stepsJson);
+  if (targetWatts !== null && actualPowerAvg !== null && actualPowerAvg > 0) {
+    const intensityScore = Math.min(actualPowerAvg / targetWatts, targetWatts / actualPowerAvg);
+    return Math.max(0, Math.min(1, 0.5 * durScore + 0.5 * intensityScore));
+  }
+
+  if (actualTss !== null && actualTss > 0) {
+    const tssEstimate = estimateTssFromSteps(stepsJson);
+    if (tssEstimate !== null) {
+      const tssScore = Math.min(actualTss / tssEstimate, tssEstimate / actualTss);
+      return Math.max(0, Math.min(1, 0.5 * durScore + 0.5 * tssScore));
+    }
+  }
+
+  return Math.max(0, Math.min(1, durScore));
+}
+
+function extractMainWorkWatts(stepsJson: string | null): number | null {
+  if (!stepsJson) return null;
+  try {
+    const { steps } = JSON.parse(stepsJson) as {
+      steps: Array<{
+        kind?: string;
+        durationSec?: number;
+        target?: { type: string; low: number; high: number };
+      }>;
+    };
+    let totalWeight = 0;
+    let weightedTarget = 0;
+    for (const s of steps) {
+      if (s.kind !== 'work') continue;
+      if (s.target?.type !== 'watts') continue;
+      const dur = s.durationSec ?? 0;
+      const mid = (s.target.low + s.target.high) / 2;
+      weightedTarget += mid * dur;
+      totalWeight += dur;
+    }
+    return totalWeight > 0 ? weightedTarget / totalWeight : null;
+  } catch {
+    return null;
+  }
+}
+
+function estimateTssFromSteps(stepsJson: string | null): number | null {
+  if (!stepsJson) return null;
+  try {
+    const { steps } = JSON.parse(stepsJson) as {
+      steps: Array<{
+        durationSec?: number;
+        target?: { type: string; low: number; high: number };
+      }>;
+    };
+    let dur = 0;
+    let weighted = 0;
+    let count = 0;
+    for (const s of steps) {
+      const d = s.durationSec ?? 0;
+      dur += d;
+      const t = s.target;
+      if (t && (t.type === 'ftp_pct' || t.type === 'hr_pct')) {
+        const mid = (t.low + t.high) / 2 / 100;
+        weighted += mid * mid * d;
+        count += d;
+      }
+    }
+    if (dur === 0 || count === 0) return null;
+    return ((dur * (weighted / count)) / 3600) * 100;
+  } catch {
+    return null;
+  }
+}
+
 async function matchPlannedWorkout(
   env: Env,
   job: IngestJob,
@@ -373,13 +457,12 @@ async function matchPlannedWorkout(
   summary: ActivitySummary,
 ): Promise<void> {
   const date = new Date(activity.session.startedAt);
-  const yyyy = date.getUTCFullYear();
-  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(date.getUTCDate()).padStart(2, '0');
-  const dateStr = `${yyyy}-${mm}-${dd}`;
+  const dateStr = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+
   const planned = await env.DB.prepare(
     `SELECT pw.id AS id, pw.workout_id AS workout_id,
-            w.steps_json AS steps_json, w.estimated_tss AS estimated_tss,
+            w.steps_json AS steps_json,
+            w.estimated_tss AS estimated_tss,
             w.estimated_duration_sec AS estimated_duration_sec
        FROM planned_workouts pw
        LEFT JOIN workouts w ON w.id = pw.workout_id
@@ -388,19 +471,21 @@ async function matchPlannedWorkout(
   )
     .bind(job.athleteId, dateStr)
     .first<PlannedRow>();
+
   if (!planned) return;
 
   let compliance: number | null = null;
-  if (planned.estimated_duration_sec && summary.totalSeconds > 0) {
-    const durRatio = Math.min(
-      summary.totalSeconds / planned.estimated_duration_sec,
-      planned.estimated_duration_sec / summary.totalSeconds,
+  const plannedDur = planned.estimated_duration_sec;
+  const actualDur = summary.totalSeconds;
+
+  if (plannedDur && actualDur > 0) {
+    compliance = computeComplianceScore(
+      plannedDur,
+      actualDur,
+      planned.steps_json ?? null,
+      typeof summary.powerAvg === 'number' ? summary.powerAvg : null,
+      typeof summary.tss === 'number' ? summary.tss : null,
     );
-    let tssMatch = 1;
-    if (planned.estimated_tss && typeof summary.tss === 'number' && summary.tss > 0) {
-      tssMatch = Math.min(summary.tss / planned.estimated_tss, planned.estimated_tss / summary.tss);
-    }
-    compliance = Math.max(0, Math.min(1, 0.5 * durRatio + 0.5 * tssMatch));
   }
 
   await env.DB.prepare(
