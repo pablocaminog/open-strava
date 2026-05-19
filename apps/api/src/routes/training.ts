@@ -67,8 +67,8 @@ trainingRoutes.post('/workouts', async (c) => {
       body = {
         name: parsed.name,
         sport: parsed.sport,
-        description: parsed.description,
-        steps: parsed.steps as WorkoutBody['steps'],
+        steps: parsed.steps as Workout['steps'],
+        ...(parsed.description !== undefined ? { description: parsed.description } : {}),
       };
     } catch (e) {
       if (e instanceof WorkoutCsvError) {
@@ -343,7 +343,7 @@ trainingRoutes.post('/planned-workouts', async (c) => {
       const ok = await isCoachOf(c.env, session.userId, targetAthlete);
       if (!ok) throw new HTTPException(403, { message: 'not your athlete' });
     }
-    const { tss, duration } = estimateLoad(parsed.steps as WorkoutBody['steps']);
+    const { tss, duration } = estimateLoad(parsed.steps as Workout['steps']);
     const workoutId = uuidv7();
     await c.env.DB.prepare(
       `INSERT INTO workouts (id, athlete_id, name, description, sport, estimated_tss, estimated_duration_sec, steps_json)
