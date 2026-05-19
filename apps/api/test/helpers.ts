@@ -84,6 +84,7 @@ export class FakeD1 implements D1Database {
   events: Row[] = [];
   eventInvites: Row[] = [];
   apiKeys: Row[] = [];
+  oauthIdentities: Row[] = [];
   pmcDaily: Map<string, Row> = new Map();
   challenges: Row[] = [];
   challengeParticipants: Row[] = [];
@@ -95,7 +96,21 @@ export class FakeD1 implements D1Database {
   prepare(sql: string): D1PreparedStatement {
     return new FakeStmt(this, sql);
   }
-  exec(): Promise<D1ExecResult> {
+  exec(sql?: string): Promise<D1ExecResult> {
+    if (sql) {
+      const trimmed = sql.replace(/\s+/g, ' ').trim();
+      if (trimmed.startsWith('INSERT INTO oauth_identities')) {
+        // Parse: INSERT INTO oauth_identities (col1, col2, ...) VALUES ('v1', 'v2', ...)
+        const colMatch = trimmed.match(/\(([^)]+)\)\s+VALUES\s*\(([^)]+)\)/i);
+        if (colMatch) {
+          const cols = colMatch[1].split(',').map((c) => c.trim());
+          const vals = colMatch[2].split(',').map((v) => v.trim().replace(/^'(.*)'$/, '$1'));
+          const row: Row = {};
+          cols.forEach((col, i) => { row[col] = vals[i] ?? null; });
+          this.oauthIdentities.push(row);
+        }
+      }
+    }
     return Promise.resolve({ count: 0, duration: 0 });
   }
   async batch<T = unknown>(stmts: D1PreparedStatement[]): Promise<D1Result<T>[]> {
@@ -899,6 +914,19 @@ export class FakeD1 implements D1Database {
       return [];
     }
     if (trimmed.startsWith('UPDATE api_keys')) {
+      return [];
+    }
+    if (trimmed.startsWith('SELECT provider FROM oauth_identities WHERE user_id')) {
+      const uid = params[0];
+      return this.oauthIdentities
+        .filter((r) => r.user_id === uid)
+        .map((r) => ({ provider: r.provider }));
+    }
+    if (trimmed.startsWith('DELETE FROM oauth_identities WHERE user_id')) {
+      const [uid, provider] = params;
+      this.oauthIdentities = this.oauthIdentities.filter(
+        (r) => !(r.user_id === uid && r.provider === provider),
+      );
       return [];
     }
     return [];

@@ -6,6 +6,8 @@
  *   GET    /api/v1/me/api-keys
  *   POST   /api/v1/me/api-keys     { name, scopes: ["read:activities",…] }
  *   DELETE /api/v1/me/api-keys/:id
+ *   GET    /api/v1/me/connections                — list connected OAuth providers
+ *   DELETE /api/v1/me/connections/:provider      — disconnect a provider
  *   DELETE /api/v1/me               { confirm: handle }   — close account
  */
 
@@ -109,6 +111,36 @@ settingsRoutes.delete('/me/api-keys/:id', async (c) => {
     'UPDATE api_keys SET revoked_at = unixepoch() WHERE id = ? AND user_id = ?',
   )
     .bind(id, session.userId)
+    .run();
+  return c.json({ ok: true });
+});
+
+const VALID_DISCONNECT_PROVIDERS = new Set(['strava', 'garmin']);
+
+settingsRoutes.get('/me/connections', async (c) => {
+  const session = c.get('session');
+  const rows = await c.env.DB.prepare(
+    `SELECT provider FROM oauth_identities WHERE user_id = ?`,
+  )
+    .bind(session.userId)
+    .all<{ provider: string }>();
+  const connected = new Set((rows.results ?? []).map((r) => r.provider));
+  return c.json({
+    strava: connected.has('strava'),
+    garmin: connected.has('garmin'),
+  });
+});
+
+settingsRoutes.delete('/me/connections/:provider', async (c) => {
+  const provider = c.req.param('provider');
+  const session = c.get('session');
+  if (!VALID_DISCONNECT_PROVIDERS.has(provider)) {
+    throw new HTTPException(400, { message: 'invalid provider' });
+  }
+  await c.env.DB.prepare(
+    `DELETE FROM oauth_identities WHERE user_id = ? AND provider = ?`,
+  )
+    .bind(session.userId, provider)
     .run();
   return c.json({ ok: true });
 });
