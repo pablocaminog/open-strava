@@ -71,15 +71,15 @@ const totalDist = DEMO.activities.reduce((a, x) => a + x.distanceM, 0);
           style="display: flex; gap: 16px; font-family: var(--font-mono); font-size: 12px; color: var(--fg-muted);"
         >
           <span style="display: inline-flex; align-items: center; gap: 6px;">
-            <span style="width: 14px; height: 2px; background: var(--pace-500);"></span>
+            <span style="width: 14px; height: 2px; background: #60a5fa;"></span>
             <span data-metric="ctl" tabindex="0">CTL</span>
           </span>
           <span style="display: inline-flex; align-items: center; gap: 6px;">
-            <span style="width: 14px; border-top: 2px dashed var(--ink-700);"></span>
+            <span style="width: 14px; border-top: 2px dashed #fb923c;"></span>
             <span data-metric="atl" tabindex="0">ATL</span>
           </span>
           <span style="display: inline-flex; align-items: center; gap: 6px;">
-            <span style="width: 14px; height: 8px; background: oklch(0.66 0.11 150 / 0.18);"></span>
+            <span style="width: 14px; height: 8px; background: rgba(192,132,252,0.2);"></span>
             <span data-metric="tsb" tabindex="0">TSB</span>
           </span>
         </div>
@@ -208,9 +208,9 @@ const totalDist = DEMO.activities.reduce((a, x) => a + x.distanceM, 0);
       axes: [axisX(), axisY()],
       series: [
         {},
-        { label: 'CTL', stroke: '#C8FA1F', width: 2 },
-        { label: 'ATL', stroke: 'var(--ink-700)', width: 1.5, dash: [4, 3] },
-        { label: 'TSB', stroke: 'oklch(0.55 0.11 150)', width: 1.25 },
+        { label: 'CTL', stroke: '#60a5fa', width: 2 },
+        { label: 'ATL', stroke: '#fb923c', width: 1.5, dash: [4, 3] },
+        { label: 'TSB', stroke: '#c084fc', width: 1.25 },
       ],
     },
     [

@@ -13,6 +13,19 @@ import Shell from '../layouts/Shell.astro';
     <!-- Fitness / Fatigue / Form tiles -->
     <div id="home-metrics" class="grid-tiles grid-cols-3"></div>
 
+    <!-- PMC chart -->
+    <div class="panel">
+      <div class="panel-header">
+        <h3 class="h3" style="font-size: 16px;">
+          <span style="color:#60a5fa">Fitness</span> · <span style="color:#fb923c">Fatigue</span> · <span style="color:#c084fc">Form</span>
+        </h3>
+        <a href="/dashboard" class="btn btn-secondary btn-sm" style="font-size: 12px;">Full PMC →</a>
+      </div>
+      <div class="panel-body">
+        <div id="home-pmc-chart" style="width: 100%;"></div>
+      </div>
+    </div>
+
     <!-- Up next -->
     <div class="panel">
       <div class="panel-header">
@@ -35,21 +48,10 @@ import Shell from '../layouts/Shell.astro';
       </div>
     </div>
 
-    <!-- PMC chart -->
-    <div class="panel">
-      <div class="panel-header">
-        <h3 class="h3" style="font-size: 16px;">Fitness · Fatigue · Form</h3>
-        <a href="/dashboard" class="btn btn-secondary btn-sm" style="font-size: 12px;">Full PMC →</a>
-      </div>
-      <div class="panel-body">
-        <div id="home-pmc-chart" style="width: 100%;"></div>
-      </div>
-    </div>
-
   </div>
 </Shell>
 
-<style>
+<style is:global>
   .planned-card {
     border: 1px dashed var(--border);
     border-radius: 10px;
@@ -84,22 +86,33 @@ import Shell from '../layouts/Shell.astro';
   .last-act {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
   }
   .last-act .la-name {
-    font-size: 15px;
-    font-weight: 600;
+    font-size: 16px;
+    font-weight: 700;
     color: var(--fg);
     text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
   .last-act .la-name:hover { text-decoration: underline; }
+  .last-act .la-sport-icon {
+    font-size: 18px;
+    line-height: 1;
+  }
   .last-act .la-meta {
     font-family: var(--font-mono);
     font-size: 12px;
     color: var(--fg-muted);
     display: flex;
-    gap: 14px;
+    gap: 12px;
     flex-wrap: wrap;
+    align-items: center;
+  }
+  .last-act .la-meta-sep {
+    color: var(--border-strong);
   }
   .la-stats {
     display: flex;
@@ -108,14 +121,24 @@ import Shell from '../layouts/Shell.astro';
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
     font-size: 13px;
-    margin-top: 4px;
+    margin-top: 2px;
   }
-  .la-stats .k {
-    font-size: 10px;
+  .la-stats .la-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .la-stats .la-stat .k {
+    font-size: 9px;
     color: var(--fg-muted);
     text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-right: 3px;
+    letter-spacing: 0.06em;
+    font-weight: 500;
+  }
+  .la-stats .la-stat .v {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--fg);
   }
 </style>
 
@@ -252,21 +275,25 @@ import Shell from '../layouts/Shell.astro';
     });
     const dur = fmtHm(act.totalSeconds);
     const dist = act.distanceM != null ? `${(act.distanceM / 1000).toFixed(1)} km` : null;
-    const stats: string[] = [];
-    if (dur) stats.push(`<span><span class="k">Time</span>${dur}</span>`);
-    if (dist) stats.push(`<span><span class="k">Dist</span>${dist}</span>`);
-    if (act.hrAvg) stats.push(`<span><span class="k">HR</span>${Math.round(act.hrAvg)}</span>`);
-    if (act.powerAvg) stats.push(`<span><span class="k">Pwr</span>${Math.round(act.powerAvg)}w</span>`);
-    if (act.np) stats.push(`<span><span class="k">NP</span>${Math.round(act.np)}w</span>`);
-    if (act.tss) stats.push(`<span><span class="k">TSS</span>${act.tss.toFixed(0)}</span>`);
+    const stats: Array<{ k: string; v: string }> = [];
+    if (dur) stats.push({ k: 'Time', v: dur });
+    if (dist) stats.push({ k: 'Dist', v: dist });
+    if (act.hrAvg) stats.push({ k: 'HR', v: `${Math.round(act.hrAvg)} bpm` });
+    if (act.powerAvg) stats.push({ k: 'Power', v: `${Math.round(act.powerAvg)} w` });
+    if (act.np) stats.push({ k: 'NP', v: `${Math.round(act.np)} w` });
+    if (act.tss) stats.push({ k: 'TSS', v: act.tss.toFixed(0) });
+    const icon = sportIcon(act.sport);
     el.innerHTML = `
       <div class="last-act">
-        <a class="la-name" href="/activity/${esc(act.id)}">${esc(act.name ?? sentenceCase(act.sport))}${complianceDot(act.complianceScore)}</a>
+        <a class="la-name" href="/activity/${esc(act.id)}">
+          <span class="la-sport-icon">${icon}</span>${esc(act.name ?? sentenceCase(act.sport))}${complianceDot(act.complianceScore)}
+        </a>
         <div class="la-meta">
           <span>${esc(date)}</span>
+          <span class="la-meta-sep">·</span>
           <span>${esc(sentenceCase(act.sport))}</span>
         </div>
-        ${stats.length ? `<div class="la-stats">${stats.join('')}</div>` : ''}
+        ${stats.length ? `<div class="la-stats">${stats.map(s => `<div class="la-stat"><span class="k">${s.k}</span><span class="v">${s.v}</span></div>`).join('')}</div>` : ''}
       </div>`;
   }
 
@@ -290,9 +317,9 @@ import Shell from '../layouts/Shell.astro';
       ],
       series: [
         {},
-        { label: 'Fitness', stroke: '#C8FA1F', width: 2 },
-        { label: 'Fatigue', stroke: 'var(--ink-700)', width: 1.5, dash: [4, 3] },
-        { label: 'Form', stroke: 'oklch(0.55 0.11 150)', width: 1.25 },
+        { label: 'Fitness', stroke: '#60a5fa', width: 2 },
+        { label: 'Fatigue', stroke: '#fb923c', width: 1.5, dash: [4, 3] },
+        { label: 'Form', stroke: '#c084fc', width: 1.25 },
       ],
     }, [t, ctl, atl, tsb], el);
   }
@@ -335,6 +362,15 @@ import Shell from '../layouts/Shell.astro';
   function sentenceCase(s: string): string {
     return s.charAt(0).toUpperCase() + s.slice(1);
   }
+  function sportIcon(sport: string): string {
+    const icons: Record<string, string> = {
+      cycling: '🚴', running: '🏃', swimming: '🏊', strength: '🏋️',
+      walk: '🚶', walking: '🚶', rowing: '🚣', hiking: '🥾', yoga: '🧘',
+      skiing: '⛷️', triathlon: '🏅', crossfit: '💪',
+    };
+    return icons[sport.toLowerCase()] ?? '🏅';
+  }
+
   function complianceDot(score: number | null | undefined): string {
     if (score == null) return '';
     const color = score >= 0.95 ? '#22c55e' : score >= 0.85 ? '#eab308' : '#ef4444';
