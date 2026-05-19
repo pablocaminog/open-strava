@@ -128,6 +128,7 @@ import Shell from '../layouts/Shell.astro';
     startedAt: number; totalSeconds: number; distanceM: number | null;
     hrAvg: number | null; powerAvg: number | null; np: number | null; tss: number | null;
     source: string; externalSource: string | null;
+    complianceScore?: number | null;
   };
   type PlannedWorkout = {
     id: string; scheduledDate: string; sport: string; durationMin: number;
@@ -260,7 +261,7 @@ import Shell from '../layouts/Shell.astro';
     if (act.tss) stats.push(`<span><span class="k">TSS</span>${act.tss.toFixed(0)}</span>`);
     el.innerHTML = `
       <div class="last-act">
-        <a class="la-name" href="/activity/${esc(act.id)}">${esc(act.name ?? sentenceCase(act.sport))}</a>
+        <a class="la-name" href="/activity/${esc(act.id)}">${esc(act.name ?? sentenceCase(act.sport))}${complianceDot(act.complianceScore)}</a>
         <div class="la-meta">
           <span>${esc(date)}</span>
           <span>${esc(sentenceCase(act.sport))}</span>
@@ -333,6 +334,12 @@ import Shell from '../layouts/Shell.astro';
   }
   function sentenceCase(s: string): string {
     return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  function complianceDot(score: number | null | undefined): string {
+    if (score == null) return '';
+    const color = score >= 0.95 ? '#22c55e' : score >= 0.85 ? '#eab308' : '#ef4444';
+    const label = score >= 0.95 ? 'On plan' : score >= 0.85 ? 'Near plan' : 'Off plan';
+    return `<span title="${label}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-left:6px;vertical-align:middle;"></span>`;
   }
   function esc(s: string): string {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

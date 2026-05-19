@@ -26,6 +26,8 @@ const { id } = Astro.params;
       </div>
     </header>
 
+    <div id="plan-match-banner" style="display:none;"></div>
+
     <div id="activity-summary" class="grid-tiles grid-cols-6"></div>
 
     <div id="map-section" class="panel" hidden>
@@ -136,7 +138,16 @@ const { id } = Astro.params;
     const [meta, stream] = await Promise.all([
       fetch(`/api/v1/activities/${id}`, { credentials: 'include' }).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json() as Promise<{ activity: ActivityRow; metrics: Metric[] }>;
+        return r.json() as Promise<{
+          activity: ActivityRow;
+          metrics: Metric[];
+          planMatch: {
+            plannedWorkoutId: string;
+            complianceScore: number | null;
+            scheduledDate: string;
+            workoutName: string | null;
+          } | null;
+        }>;
       }),
       fetch(`/api/v1/activities/${id}/stream`, { credentials: 'include' }).then((r) => {
         if (!r.ok) throw new Error(`stream HTTP ${r.status}`);
@@ -145,6 +156,7 @@ const { id } = Astro.params;
     ]);
 
     renderHeader(meta.activity);
+    renderPlanBanner(meta.planMatch ?? null);
     renderSummary(meta.activity, meta.metrics);
     renderRouteMap(stream.samples);
     renderTimeChart(stream.samples);
@@ -259,6 +271,27 @@ const { id } = Astro.params;
     let h = 0;
     for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
     return Math.abs(h);
+  }
+
+  function renderPlanBanner(planMatch: {
+    plannedWorkoutId: string;
+    complianceScore: number | null;
+    scheduledDate: string;
+    workoutName: string | null;
+  } | null): void {
+    const el = document.getElementById('plan-match-banner');
+    if (!el || !planMatch || planMatch.complianceScore == null) return;
+    const score = planMatch.complianceScore;
+    const color = score >= 0.95 ? '#22c55e' : score >= 0.85 ? '#eab308' : '#ef4444';
+    const label = score >= 0.95 ? 'On plan' : score >= 0.85 ? 'Near plan' : 'Off plan';
+    const pct = Math.round(score * 100);
+    const workoutName = planMatch.workoutName ?? 'Planned workout';
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:8px;border:1px solid ${color};background:${color}18;font-size:14px;">
+        <span style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0;"></span>
+        <span><strong>${label}</strong> — ${escape(workoutName)} &nbsp;·&nbsp; ${pct}% compliance</span>
+      </div>`;
+    el.style.display = '';
   }
 
   function renderHeader(a: ActivityRow) {
