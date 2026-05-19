@@ -115,8 +115,6 @@ interface Connector {
 - Capability: Downloads indoor rides via FIT export
 - Instructions: In the Biketerra app, tap an activity → Share → Export FIT. Upload the file on the Upload page.
 
-**Hammerhead** already listed above. Let me use **MyWhoosh** instead:
-
 **MyWhoosh** (`thirdparty`)
 - Capability: Downloads rides via Strava sync
 - Instructions: In MyWhoosh, go to Settings → Connected Apps → link your Strava account. Then connect Strava above — rides will sync automatically.
